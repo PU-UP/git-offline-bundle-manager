@@ -7,13 +7,13 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 # Import config manager module
-$modulePath = Join-Path $PSScriptRoot "Config-Manager.psm1"
+$modulePath = Join-Path (Split-Path $PSScriptRoot -Parent) "common\Config-Manager.psm1"
 Import-Module $modulePath -Force
 
 # Read config
 try {
     $config = Read-Config
-    $platform = Get-PlatformConfig
+    $platform = Get-PathConfig
     
     $RepoDir = $platform.repo_dir
     
@@ -22,7 +22,7 @@ try {
     
 } catch {
     Write-Host "ERROR: Failed to read config: $($_.Exception.Message)" -ForegroundColor Red
-    Write-Host "Run .\Show-Config.ps1 to check config status" -ForegroundColor Yellow
+    Write-Host "Run .\common\test-config.ps1 to check config status" -ForegroundColor Yellow
     exit 1
 }
 

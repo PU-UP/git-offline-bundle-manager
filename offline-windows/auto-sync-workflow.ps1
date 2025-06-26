@@ -12,7 +12,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 # Import config manager module
-$modulePath = Join-Path $PSScriptRoot "Config-Manager.psm1"
+$modulePath = Join-Path (Split-Path $PSScriptRoot -Parent) "common\Config-Manager.psm1"
 Import-Module $modulePath -Force
 
 function Write-Step {
@@ -30,23 +30,29 @@ function Confirm-Continue {
 # Read config
 try {
     $config = Read-Config
-    $platform = Get-PlatformConfig
+    $platform = Get-PathConfig
+    $syncConfig = Get-SyncConfig
     
     $RepoDir = $platform.repo_dir
     $BundlesDir = $platform.bundles_dir
-    $AutoResolve = $config.sync.auto_resolve_conflicts
-    $SkipBackup = -not $config.sync.backup_before_update
+    $LocalBundlesDir = $platform.local_bundles_dir
+    $BackupDir = $platform.backup_dir
+    
+    $AutoResolve = $syncConfig.auto_resolve_conflicts
+    $SkipBackup = -not $syncConfig.backup_before_update
     $CreateLocalBundle = $false  # Default to false, can be enabled via config if needed
     
     Write-Host "Config:" -ForegroundColor Cyan
     Write-Host "  Repo dir: $RepoDir" -ForegroundColor White
     Write-Host "  Bundles dir: $BundlesDir" -ForegroundColor White
+    Write-Host "  Local bundles dir: $LocalBundlesDir" -ForegroundColor White
+    Write-Host "  Backup dir: $BackupDir" -ForegroundColor White
     Write-Host "  Auto resolve conflicts: $AutoResolve" -ForegroundColor White
     Write-Host "  Skip backup: $SkipBackup" -ForegroundColor White
     
 } catch {
     Write-Host "ERROR: Failed to read config: $($_.Exception.Message)" -ForegroundColor Red
-    Write-Host "Run .\Show-Config.ps1 to check config status" -ForegroundColor Yellow
+    Write-Host "Run .\common\test-config.ps1 to check config status" -ForegroundColor Yellow
     exit 1
 }
 
@@ -124,13 +130,11 @@ try {
 if ($CreateLocalBundle) {
     Write-Step "Creating local bundle" "Cyan"
     
-    $localBundlesDir = $platform.local_bundles_dir
-    
     if (Confirm-Continue "Create local bundle for sync?") {
         try {
             & "$PSScriptRoot\Create-Bundle-From-Local.ps1"
             Write-Host "SUCCESS: Local bundle creation completed" -ForegroundColor Green
-            Write-Host "Output directory: $localBundlesDir" -ForegroundColor Cyan
+            Write-Host "Output directory: $LocalBundlesDir" -ForegroundColor Cyan
         } catch {
             Write-Host "ERROR: Failed to create local bundle: $($_.Exception.Message)" -ForegroundColor Red
         }
@@ -153,8 +157,8 @@ Write-Host "1. Check if code works properly" -ForegroundColor White
 Write-Host "2. Run tests to ensure quality" -ForegroundColor White
 Write-Host "3. Continue development work" -ForegroundColor White
 
-if ($CreateLocalBundle -and (Test-Path $localBundlesDir)) {
-    Write-Host "4. Copy files from $localBundlesDir to Ubuntu for sync" -ForegroundColor White
+if ($CreateLocalBundle -and (Test-Path $LocalBundlesDir)) {
+    Write-Host "4. Copy files from $LocalBundlesDir to Ubuntu for sync" -ForegroundColor White
 }
 
 Write-Host ""

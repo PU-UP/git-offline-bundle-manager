@@ -329,6 +329,15 @@ function Get-SyncConfig {
     return $null
 }
 
+# 获取全局配置
+function Get-GlobalConfig {
+    if ($null -eq $script:Config) {
+        Read-Config
+    }
+    
+    return $script:Config.global
+}
+
 # 导出模块成员
 Export-ModuleMember -Function @(
     'Get-ConfigValue',
@@ -339,5 +348,6 @@ Export-ModuleMember -Function @(
     'Test-Config',
     'Get-PathConfig',
     'Get-GitConfig',
-    'Get-SyncConfig'
+    'Get-SyncConfig',
+    'Get-GlobalConfig'
 ) 

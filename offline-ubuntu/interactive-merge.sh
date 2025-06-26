@@ -11,25 +11,24 @@ DEFAULT_ROOT="/work/develop_gitlab/slam-core"
 CONFIG_FILE="config.json"
 if [[ -f "$CONFIG_FILE" ]]; then
     echo ">>> Reading config file: $CONFIG_FILE"
+    # Use jq to parse config file (if available)
     if command -v jq &> /dev/null; then
-        FORCE_PLATFORM=$(jq -r '.platform.force_platform // empty' "$CONFIG_FILE" 2>/dev/null)
+        # Check if platform is forced
+        FORCE_PLATFORM=$(jq -r '.global.platform.force_platform // empty' "$CONFIG_FILE" 2>/dev/null)
         if [[ -n "$FORCE_PLATFORM" ]]; then
             PLATFORM="$FORCE_PLATFORM"
         else
-            PLATFORM="ubuntu"
+            PLATFORM="offline_ubuntu"
         fi
         
-        ROOT=$(jq -r ".paths.$PLATFORM.repo_dir // empty" "$CONFIG_FILE" 2>/dev/null || echo "$DEFAULT_ROOT")
-        ENABLE_INTERACTIVE=$(jq -r '.workflow.enable_interactive_mode // true' "$CONFIG_FILE" 2>/dev/null)
+        ROOT=$(jq -r ".environments.$PLATFORM.paths.repo_dir // empty" "$CONFIG_FILE" 2>/dev/null || echo "$DEFAULT_ROOT")
     else
         echo ">>> jq not installed, using default config"
         ROOT="$DEFAULT_ROOT"
-        ENABLE_INTERACTIVE=true
     fi
 else
     echo ">>> Config file not found, using default config"
     ROOT="$DEFAULT_ROOT"
-    ENABLE_INTERACTIVE=true
 fi
 
 # Environment variable overrides
@@ -37,7 +36,6 @@ ROOT="${GIT_OFFLINE_UBUNTU_REPO_DIR:-$ROOT}"
 
 echo ">>> Using config:"
 echo "    Repo dir: $ROOT"
-echo "    Interactive mode: $ENABLE_INTERACTIVE"
 
 # Check if repo exists
 if [[ ! -d "$ROOT/.git" ]]; then

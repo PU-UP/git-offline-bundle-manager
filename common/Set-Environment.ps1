@@ -47,7 +47,8 @@ function Clear-EnvironmentVariables {
 function Set-EnvironmentFromConfig {
     try {
         $config = Read-Config
-        $platform = Get-PlatformConfig
+        $platform = Get-PathConfig
+        $gitConfig = Get-GitConfig
         Write-Host "Setting environment variables from config file..." -ForegroundColor Yellow
         [Environment]::SetEnvironmentVariable("GIT_OFFLINE_REPO_DIR", $platform.repo_dir, "User")
         [Environment]::SetEnvironmentVariable("GIT_OFFLINE_BUNDLES_DIR", $platform.bundles_dir, "User")
@@ -55,8 +56,8 @@ function Set-EnvironmentFromConfig {
         if ($platform.backup_dir) {
             [Environment]::SetEnvironmentVariable("GIT_OFFLINE_BACKUP_DIR", $platform.backup_dir, "User")
         }
-        [Environment]::SetEnvironmentVariable("GIT_OFFLINE_USER_NAME", $config.git.user_name, "User")
-        [Environment]::SetEnvironmentVariable("GIT_OFFLINE_USER_EMAIL", $config.git.user_email, "User")
+        [Environment]::SetEnvironmentVariable("GIT_OFFLINE_USER_NAME", $gitConfig.user_name, "User")
+        [Environment]::SetEnvironmentVariable("GIT_OFFLINE_USER_EMAIL", $gitConfig.user_email, "User")
         Write-Host "Environment variables set." -ForegroundColor Green
     } catch {
         Write-Host "ERROR: Failed to set environment variables: $($_.Exception.Message)" -ForegroundColor Red

@@ -19,20 +19,19 @@ if [[ -f "$CONFIG_FILE" ]]; then
     # Use jq to parse config file (if available)
     if command -v jq &> /dev/null; then
         # Check if platform is forced
-        FORCE_PLATFORM=$(jq -r '.platform.force_platform // empty' "$CONFIG_FILE" 2>/dev/null)
+        FORCE_PLATFORM=$(jq -r '.global.platform.force_platform // empty' "$CONFIG_FILE" 2>/dev/null)
         if [[ -n "$FORCE_PLATFORM" ]]; then
             PLATFORM="$FORCE_PLATFORM"
         else
-            PLATFORM="ubuntu"
+            PLATFORM="offline_ubuntu"
         fi
         
-        ROOT=$(jq -r ".paths.$PLATFORM.repo_dir // empty" "$CONFIG_FILE" 2>/dev/null || echo "$DEFAULT_ROOT")
-        OUTPUT_DIR=$(jq -r ".paths.$PLATFORM.local_bundles_dir // empty" "$CONFIG_FILE" 2>/dev/null || echo "$DEFAULT_OUTPUT")
-        INCLUDE_ALL=$(jq -r '.bundle.include_all_branches // false' "$CONFIG_FILE" 2>/dev/null)
-        CREATE_DIFF=$(jq -r '.sync.create_diff_report // true' "$CONFIG_FILE" 2>/dev/null)
-        TIMESTAMP_FORMAT=$(jq -r '.bundle.timestamp_format // "yyyyMMdd_HHmmss"' "$CONFIG_FILE" 2>/dev/null)
-        LOCAL_PREFIX=$(jq -r '.bundle.local_prefix // "local_"' "$CONFIG_FILE" 2>/dev/null)
-        MAIN_REPO_NAME=$(jq -r '.bundle.main_repo_name // "slam-core"' "$CONFIG_FILE" 2>/dev/null)
+        ROOT=$(jq -r ".environments.$PLATFORM.paths.repo_dir // empty" "$CONFIG_FILE" 2>/dev/null || echo "$DEFAULT_ROOT")
+        OUTPUT_DIR=$(jq -r ".environments.$PLATFORM.paths.local_bundles_dir // empty" "$CONFIG_FILE" 2>/dev/null || echo "$DEFAULT_OUTPUT")
+        INCLUDE_ALL=$(jq -r '.global.bundle.include_all_branches // false' "$CONFIG_FILE" 2>/dev/null)
+        CREATE_DIFF=$(jq -r ".environments.$PLATFORM.sync.create_diff_report // true" "$CONFIG_FILE" 2>/dev/null)
+        TIMESTAMP_FORMAT=$(jq -r '.global.bundle.timestamp_format // "yyyyMMdd_HHmmss"' "$CONFIG_FILE" 2>/dev/null)
+        LOCAL_PREFIX=$(jq -r '.global.bundle.local_prefix // "local_"' "$CONFIG_FILE" 2>/dev/null)
     else
         echo ">>> jq not installed, using default config"
         ROOT="$DEFAULT_ROOT"
@@ -41,7 +40,6 @@ if [[ -f "$CONFIG_FILE" ]]; then
         CREATE_DIFF=true
         TIMESTAMP_FORMAT="yyyyMMdd_HHmmss"
         LOCAL_PREFIX="local_"
-        MAIN_REPO_NAME="slam-core"
     fi
 else
     echo ">>> Config file not found, using default config"
@@ -51,7 +49,6 @@ else
     CREATE_DIFF=true
     TIMESTAMP_FORMAT="yyyyMMdd_HHmmss"
     LOCAL_PREFIX="local_"
-    MAIN_REPO_NAME="slam-core"
 fi
 
 # Environment variable overrides

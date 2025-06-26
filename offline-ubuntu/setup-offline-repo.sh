@@ -19,18 +19,18 @@ if [[ -f "$CONFIG_FILE" ]]; then
     # Use jq to parse config file (if available)
     if command -v jq &> /dev/null; then
         # Check if platform is forced
-        FORCE_PLATFORM=$(jq -r '.platform.force_platform // empty' "$CONFIG_FILE" 2>/dev/null)
+        FORCE_PLATFORM=$(jq -r '.global.platform.force_platform // empty' "$CONFIG_FILE" 2>/dev/null)
         if [[ -n "$FORCE_PLATFORM" ]]; then
             PLATFORM="$FORCE_PLATFORM"
         else
-            PLATFORM="ubuntu"
+            PLATFORM="offline_ubuntu"
         fi
         
-        ROOT=$(jq -r ".paths.$PLATFORM.repo_dir // empty" "$CONFIG_FILE" 2>/dev/null || echo "$DEFAULT_ROOT")
-        BUNDLES_DIR=$(jq -r ".paths.$PLATFORM.bundles_dir // empty" "$CONFIG_FILE" 2>/dev/null || echo "$DEFAULT_BUNDLES_DIR")
-        MAIN_REPO_NAME=$(jq -r '.bundle.main_repo_name // "slam-core"' "$CONFIG_FILE" 2>/dev/null)
-        GIT_USER_NAME=$(jq -r '.git.user_name // "Your Name"' "$CONFIG_FILE" 2>/dev/null)
-        GIT_USER_EMAIL=$(jq -r '.git.user_email // "your.email@company.com"' "$CONFIG_FILE" 2>/dev/null)
+        ROOT=$(jq -r ".environments.$PLATFORM.paths.repo_dir // empty" "$CONFIG_FILE" 2>/dev/null || echo "$DEFAULT_ROOT")
+        BUNDLES_DIR=$(jq -r ".environments.$PLATFORM.paths.bundles_dir // empty" "$CONFIG_FILE" 2>/dev/null || echo "$DEFAULT_BUNDLES_DIR")
+        MAIN_REPO_NAME=$(jq -r '.global.bundle.main_repo_name // "slam-core"' "$CONFIG_FILE" 2>/dev/null)
+        GIT_USER_NAME=$(jq -r ".environments.$PLATFORM.git.user_name // 'Your Name'" "$CONFIG_FILE" 2>/dev/null)
+        GIT_USER_EMAIL=$(jq -r ".environments.$PLATFORM.git.user_email // 'your.email@company.com'" "$CONFIG_FILE" 2>/dev/null)
     else
         echo ">>> jq not installed, using default config"
         ROOT="$DEFAULT_ROOT"

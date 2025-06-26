@@ -11,28 +11,33 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 # Import config manager module
-$modulePath = Join-Path $PSScriptRoot "Config-Manager.psm1"
+$modulePath = Join-Path (Split-Path $PSScriptRoot -Parent) "common\Config-Manager.psm1"
 Import-Module $modulePath -Force
 
 # Read config
 try {
     $config = Read-Config
-    $platform = Get-PlatformConfig
+    $platform = Get-PathConfig
+    $globalConfig = Get-GlobalConfig
+    $syncConfig = Get-SyncConfig
     
     $RepoDir = $platform.repo_dir
-    $OutputDir = $platform.local_bundles_dir
-    $IncludeAll = $config.bundle.include_all_branches
-    $CreateDiff = $config.sync.create_diff_report
+    $BundlesDir = $platform.bundles_dir
+    $LocalBundlesDir = $platform.local_bundles_dir
+    
+    $IncludeAll = $globalConfig.bundle.include_all_branches
+    $CreateDiff = $syncConfig.create_diff_report
     
     Write-Host "Config:" -ForegroundColor Cyan
     Write-Host "  Repo dir: $RepoDir" -ForegroundColor White
-    Write-Host "  Output dir: $OutputDir" -ForegroundColor White
+    Write-Host "  Bundles dir: $BundlesDir" -ForegroundColor White
+    Write-Host "  Local bundles dir: $LocalBundlesDir" -ForegroundColor White
     Write-Host "  Include all branches: $IncludeAll" -ForegroundColor White
     Write-Host "  Create diff report: $CreateDiff" -ForegroundColor White
     
 } catch {
     Write-Host "ERROR: Failed to read config: $($_.Exception.Message)" -ForegroundColor Red
-    Write-Host "Run .\Show-Config.ps1 to check config status" -ForegroundColor Yellow
+    Write-Host "Run .\common\test-config.ps1 to check config status" -ForegroundColor Yellow
     exit 1
 }
 
@@ -44,18 +49,18 @@ if (-not (Test-Path "$RepoDir/.git")) {
 }
 
 # 1) Create output directory
-if (-not (Test-Path $OutputDir)) {
-    Write-Host "Creating output directory: $OutputDir" -ForegroundColor Green
-    New-Item -ItemType Directory -Path $OutputDir | Out-Null
+if (-not (Test-Path $LocalBundlesDir)) {
+    Write-Host "Creating output directory: $LocalBundlesDir" -ForegroundColor Green
+    New-Item -ItemType Directory -Path $LocalBundlesDir | Out-Null
 }
 
 # 2) Get current timestamp
-$timestamp = Get-Date -Format $config.bundle.timestamp_format
-$bundlePrefix = "$($config.bundle.local_prefix)$timestamp"
+$timestamp = Get-Date -Format $globalConfig.bundle.timestamp_format
+$bundlePrefix = "$($globalConfig.bundle.local_prefix)$timestamp"
 
 # 3) Create main repo bundle
 Write-Host "Creating main repo bundle..." -ForegroundColor Green
-$mainBundle = Join-Path $OutputDir "$bundlePrefix`_slam-core.bundle"
+$mainBundle = Join-Path $LocalBundlesDir "$bundlePrefix`_slam-core.bundle"
 
 if ($IncludeAll) {
     git -C $RepoDir bundle create $mainBundle --all
@@ -71,7 +76,7 @@ $subPaths = git -C $RepoDir submodule status --recursive |
 
 foreach ($path in $subPaths) {
     $bundleName = ($path -replace '/', '_')
-    $subBundle = Join-Path $OutputDir "$bundlePrefix`_$bundleName.bundle"
+    $subBundle = Join-Path $LocalBundlesDir "$bundlePrefix`_$bundleName.bundle"
     $subRepo = Join-Path $RepoDir $path
     
     Write-Host "  Creating submodule bundle: $path" -ForegroundColor White
@@ -86,7 +91,7 @@ foreach ($path in $subPaths) {
 # 5) Create diff report
 if ($CreateDiff) {
     Write-Host "Creating diff report..." -ForegroundColor Green
-    $diffReport = Join-Path $OutputDir "$bundlePrefix`_diff_report.txt"
+    $diffReport = Join-Path $LocalBundlesDir "$bundlePrefix`_diff_report.txt"
     
     # Main repo diff
     $mainDiff = git -C $RepoDir diff last-sync..HEAD --stat
@@ -115,7 +120,8 @@ $syncInfo = @{
     git_status = git -C $RepoDir status --porcelain
     config_used = @{
         repo_dir = $RepoDir
-        output_dir = $OutputDir
+        bundles_dir = $BundlesDir
+        local_bundles_dir = $LocalBundlesDir
         include_all = $IncludeAll
         create_diff = $CreateDiff
     }
@@ -126,12 +132,12 @@ foreach ($path in $subPaths) {
     $syncInfo.sub_bundles += "$bundlePrefix`_$bundleName.bundle"
 }
 
-$syncInfo | ConvertTo-Json -Depth 3 | Out-File (Join-Path $OutputDir "$bundlePrefix`_info.json") -Encoding UTF8
+$syncInfo | ConvertTo-Json -Depth 3 | Out-File (Join-Path $LocalBundlesDir "$bundlePrefix`_info.json") -Encoding UTF8
 
 # 7) Show results
 Write-Host ""
 Write-Host "SUCCESS: Bundle creation completed!" -ForegroundColor Green
-Write-Host "Output directory: $OutputDir" -ForegroundColor Cyan
+Write-Host "Output directory: $LocalBundlesDir" -ForegroundColor Cyan
 Write-Host "Main repo bundle: $bundlePrefix`_slam-core.bundle" -ForegroundColor Cyan
 Write-Host "Submodule bundle count: $($subPaths.Count)" -ForegroundColor Cyan
 
@@ -141,5 +147,5 @@ if ($CreateDiff) {
 
 Write-Host ""
 Write-Host "Next steps:" -ForegroundColor Yellow
-Write-Host "1. Copy files from $OutputDir to Ubuntu" -ForegroundColor White
+Write-Host "1. Copy files from $LocalBundlesDir to Ubuntu" -ForegroundColor White
 Write-Host "2. Use import_local_bundles.sh on Ubuntu to import changes" -ForegroundColor White 

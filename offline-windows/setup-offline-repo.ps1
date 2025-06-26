@@ -11,23 +11,24 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 # Import config manager module
-$modulePath = Join-Path $PSScriptRoot "Config-Manager.psm1"
+$modulePath = Join-Path (Split-Path $PSScriptRoot -Parent) "common\Config-Manager.psm1"
 Import-Module $modulePath -Force
 
 # Read config
 try {
     $config = Read-Config
-    $platform = Get-PlatformConfig
+    $platform = Get-PathConfig
+    $gitConfig = Get-GitConfig
     $BundlesDir = $platform.bundles_dir
     $RepoDir = $platform.repo_dir
     Write-Host "Config:" -ForegroundColor Cyan
     Write-Host "  Bundles dir: $BundlesDir" -ForegroundColor White
     Write-Host "  Repo dir: $RepoDir" -ForegroundColor White
-    Write-Host "  Git user: $($config.git.user_name)" -ForegroundColor White
-    Write-Host "  Git email: $($config.git.user_email)" -ForegroundColor White
+    Write-Host "  Git user: $($gitConfig.user_name)" -ForegroundColor White
+    Write-Host "  Git email: $($gitConfig.user_email)" -ForegroundColor White
 } catch {
     Write-Host "ERROR: Failed to read config: $($_.Exception.Message)" -ForegroundColor Red
-    Write-Host "Run .\Show-Config.ps1 to check config status" -ForegroundColor Yellow
+    Write-Host "Run .\common\test-config.ps1 to check config status" -ForegroundColor Yellow
     exit 1
 }
 
@@ -46,8 +47,8 @@ if (-not (Test-Path "$RepoDir/.git")) {
 
 # 2) Set local git identity
 Write-Host "Configuring git identity..." -ForegroundColor Green
-git -C $RepoDir config --local user.name $config.git.user_name
-git -C $RepoDir config --local user.email $config.git.user_email
+git -C $RepoDir config --local user.name $gitConfig.user_name
+git -C $RepoDir config --local user.email $gitConfig.user_email
 
 # 3) Unpack all bundles to _unpacked dir
 $UnpackDir = Join-Path $BundlesDir '_unpacked'
@@ -87,7 +88,7 @@ foreach ($path in $subPaths) {
 
 # 5) Offline init & update submodules
 Write-Host "Initializing submodules..." -ForegroundColor Green
-$env:GIT_ALLOW_PROTOCOL = $config.git.allow_protocol
+$env:GIT_ALLOW_PROTOCOL = $gitConfig.allow_protocol
 git -C $RepoDir submodule update --init --recursive
 $env:GIT_ALLOW_PROTOCOL = $null
 

@@ -20,20 +20,22 @@ if [[ -f "$CONFIG_FILE" ]]; then
     # Use jq to parse config file (if available)
     if command -v jq &> /dev/null; then
         # Check if platform is forced
-        FORCE_PLATFORM=$(jq -r '.platform.force_platform // empty' "$CONFIG_FILE" 2>/dev/null)
+        FORCE_PLATFORM=$(jq -r '.global.platform.force_platform // empty' "$CONFIG_FILE" 2>/dev/null)
         if [[ -n "$FORCE_PLATFORM" ]]; then
             PLATFORM="$FORCE_PLATFORM"
         else
-            PLATFORM="ubuntu"
+            PLATFORM="offline_ubuntu"
         fi
         
-        ROOT=$(jq -r ".paths.$PLATFORM.repo_dir // empty" "$CONFIG_FILE" 2>/dev/null || echo "$DEFAULT_ROOT")
-        BUNDLES_DIR=$(jq -r ".paths.$PLATFORM.bundles_dir // empty" "$CONFIG_FILE" 2>/dev/null || echo "$DEFAULT_BUNDLES_DIR")
-        LOCAL_BUNDLES_DIR=$(jq -r ".paths.$PLATFORM.local_bundles_dir // empty" "$CONFIG_FILE" 2>/dev/null || echo "./local-bundles")
-        BACKUP_DIR=$(jq -r ".paths.$PLATFORM.backup_dir // empty" "$CONFIG_FILE" 2>/dev/null || echo "./backups")
-        AUTO_RESOLVE=$(jq -r '.sync.auto_resolve_conflicts // false' "$CONFIG_FILE" 2>/dev/null)
-        BACKUP_BEFORE_UPDATE=$(jq -r '.sync.backup_before_update // true' "$CONFIG_FILE" 2>/dev/null)
-        CONFIRM_BEFORE_ACTIONS=$(jq -r '.sync.confirm_before_actions // true' "$CONFIG_FILE" 2>/dev/null)
+        ROOT=$(jq -r ".environments.$PLATFORM.paths.repo_dir // empty" "$CONFIG_FILE" 2>/dev/null || echo "$DEFAULT_ROOT")
+        BUNDLES_DIR=$(jq -r ".environments.$PLATFORM.paths.bundles_dir // empty" "$CONFIG_FILE" 2>/dev/null || echo "$DEFAULT_BUNDLES_DIR")
+        LOCAL_BUNDLES_DIR=$(jq -r ".environments.$PLATFORM.paths.local_bundles_dir // empty" "$CONFIG_FILE" 2>/dev/null || echo "./local-bundles")
+        BACKUP_DIR=$(jq -r ".environments.$PLATFORM.paths.backup_dir // empty" "$CONFIG_FILE" 2>/dev/null || echo "./backups")
+        AUTO_RESOLVE=$(jq -r ".environments.$PLATFORM.sync.auto_resolve_conflicts // false" "$CONFIG_FILE" 2>/dev/null)
+        SKIP_BACKUP=$(jq -r ".environments.$PLATFORM.sync.backup_before_update // true" "$CONFIG_FILE" 2>/dev/null)
+        SKIP_BACKUP=$([[ "$SKIP_BACKUP" == "true" ]] && echo "false" || echo "true")
+        CREATE_LOCAL_BUNDLE=$(jq -r '.global.workflow.auto_create_local_bundle // false' "$CONFIG_FILE" 2>/dev/null)
+        ENABLE_INTERACTIVE=$(jq -r '.global.workflow.enable_interactive_mode // true' "$CONFIG_FILE" 2>/dev/null)
     else
         echo ">>> jq not installed, using default config"
         ROOT="$DEFAULT_ROOT"
@@ -41,8 +43,9 @@ if [[ -f "$CONFIG_FILE" ]]; then
         LOCAL_BUNDLES_DIR="./local-bundles"
         BACKUP_DIR="./backups"
         AUTO_RESOLVE=false
-        BACKUP_BEFORE_UPDATE=true
-        CONFIRM_BEFORE_ACTIONS=true
+        SKIP_BACKUP=false
+        CREATE_LOCAL_BUNDLE=false
+        ENABLE_INTERACTIVE=true
     fi
 else
     echo ">>> Config file not found, using default config"
@@ -51,8 +54,9 @@ else
     LOCAL_BUNDLES_DIR="./local-bundles"
     BACKUP_DIR="./backups"
     AUTO_RESOLVE=false
-    BACKUP_BEFORE_UPDATE=true
-    CONFIRM_BEFORE_ACTIONS=true
+    SKIP_BACKUP=false
+    CREATE_LOCAL_BUNDLE=false
+    ENABLE_INTERACTIVE=true
 fi
 
 # Environment variable overrides
@@ -63,7 +67,7 @@ echo ">>> Using config:"
 echo "    Repo dir: $ROOT"
 echo "    Bundles dir: $BUNDLES_DIR"
 echo "    Auto resolve conflicts: $AUTO_RESOLVE"
-echo "    Backup before update: $BACKUP_BEFORE_UPDATE"
+echo "    Backup before update: $SKIP_BACKUP"
 
 # Helper functions
 write_step() {
@@ -75,7 +79,7 @@ write_step() {
 
 confirm_continue() {
     local message="$1"
-    if [[ "$CONFIRM_BEFORE_ACTIONS" == "true" ]]; then
+    if [[ "$ENABLE_INTERACTIVE" == "true" ]]; then
         read -p "$message (y/N): " -n 1 -r
         echo
         [[ $REPLY =~ ^[Yy]$ ]]
@@ -127,7 +131,7 @@ if [[ "$has_changes" == "true" ]]; then
 fi
 
 # 2) Create backup
-if [[ "$BACKUP_BEFORE_UPDATE" == "true" ]]; then
+if [[ "$SKIP_BACKUP" == "false" ]]; then
     write_step "Creating backup" "Yellow"
     
     if confirm_continue "Create backup before update?"; then
@@ -196,7 +200,7 @@ git submodule foreach --recursive 'git tag -f last-sync'
 echo "SUCCESS: Update completed"
 
 # 5) Create local bundle (optional)
-if confirm_continue "Create local bundle for sync?"; then
+if [[ "$CREATE_LOCAL_BUNDLE" == "true" ]]; then
     write_step "Creating local bundle" "Cyan"
     
     mkdir -p "$LOCAL_BUNDLES_DIR"
