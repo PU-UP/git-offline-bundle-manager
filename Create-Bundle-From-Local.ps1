@@ -1,51 +1,82 @@
 <#
 .SYNOPSIS
-  将本地修改打包成bundle文件，用于同步回Ubuntu：
-    1. 检查本地修改状态
-    2. 创建包含本地修改的bundle
-    3. 生成差异报告
-    4. 准备同步文件
+  Create bundle files from local changes for syncing back to Ubuntu:
+    1. Check local change status
+    2. Create bundles containing local changes
+    3. Generate diff report
+    4. Prepare sync files
 #>
 
 param (
-    [string]$RepoDir = 'D:\Projects\github\slam-core',
-    [string]$OutputDir = 'D:\Projects\github\slam-core\local-bundles',
-    [switch]$IncludeAll,    # 包含所有分支
-    [switch]$CreateDiff     # 创建差异报告
+    [string]$ConfigFile = "config.json",
+    [string]$RepoDir,
+    [string]$OutputDir,
+    [switch]$IncludeAll,
+    [switch]$CreateDiff
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-# 0) 检查仓库状态
-Write-Host "检查本地仓库状态..." -ForegroundColor Yellow
+# Import config manager module
+$modulePath = Join-Path $PSScriptRoot "Config-Manager.psm1"
+Import-Module $modulePath -Force
 
-if (-not (Test-Path "$RepoDir/.git")) {
-    throw "❌ 不是有效的Git仓库: $RepoDir"
+# Read config
+try {
+    $config = Read-Config -ConfigFile $ConfigFile
+    $platform = Get-PlatformConfig -ConfigFile $ConfigFile
+    
+    # Use parameter override or config file paths
+    $RepoDir = if ($RepoDir) { $RepoDir } else { $platform.repo_dir }
+    $OutputDir = if ($OutputDir) { $OutputDir } else { $platform.local_bundles_dir }
+    
+    # Use config file settings
+    $IncludeAll = if ($IncludeAll) { $IncludeAll } else { $config.bundle.include_all_branches }
+    $CreateDiff = if ($CreateDiff) { $CreateDiff } else { $config.sync.create_diff_report }
+    
+    Write-Host "Config:" -ForegroundColor Cyan
+    Write-Host "  Repo dir: $RepoDir" -ForegroundColor White
+    Write-Host "  Output dir: $OutputDir" -ForegroundColor White
+    Write-Host "  Include all branches: $IncludeAll" -ForegroundColor White
+    Write-Host "  Create diff report: $CreateDiff" -ForegroundColor White
+    
+} catch {
+    Write-Host "ERROR: Failed to read config: $($_.Exception.Message)" -ForegroundColor Red
+    Write-Host "Run .\Show-Config.ps1 to check config status" -ForegroundColor Yellow
+    exit 1
 }
 
-# 1) 创建输出目录
+# 0) Check repo status
+Write-Host "Checking local repo status..." -ForegroundColor Yellow
+
+if (-not (Test-Path "$RepoDir/.git")) {
+    throw "ERROR: Not a valid Git repository: $RepoDir"
+}
+
+# 1) Create output directory
 if (-not (Test-Path $OutputDir)) {
+    Write-Host "Creating output directory: $OutputDir" -ForegroundColor Green
     New-Item -ItemType Directory -Path $OutputDir | Out-Null
 }
 
-# 2) 获取当前时间戳
-$timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
-$bundlePrefix = "local_$timestamp"
+# 2) Get current timestamp
+$timestamp = Get-Date -Format $config.bundle.timestamp_format
+$bundlePrefix = "$($config.bundle.local_prefix)$timestamp"
 
-# 3) 创建主仓库bundle
-Write-Host "创建主仓库bundle..." -ForegroundColor Green
+# 3) Create main repo bundle
+Write-Host "Creating main repo bundle..." -ForegroundColor Green
 $mainBundle = Join-Path $OutputDir "$bundlePrefix`_slam-core.bundle"
 
 if ($IncludeAll) {
     git -C $RepoDir bundle create $mainBundle --all
 } else {
-    # 只包含当前分支和last-sync标签
+    # Only include current branch and last-sync tag
     git -C $RepoDir bundle create $mainBundle HEAD last-sync
 }
 
-# 4) 创建子模块bundle
-Write-Host "创建子模块bundle..." -ForegroundColor Green
+# 4) Create submodule bundles
+Write-Host "Creating submodule bundles..." -ForegroundColor Green
 $subPaths = git -C $RepoDir submodule status --recursive |
             ForEach-Object { ($_ -split '\s+')[1] }
 
@@ -54,6 +85,8 @@ foreach ($path in $subPaths) {
     $subBundle = Join-Path $OutputDir "$bundlePrefix`_$bundleName.bundle"
     $subRepo = Join-Path $RepoDir $path
     
+    Write-Host "  Creating submodule bundle: $path" -ForegroundColor White
+    
     if ($IncludeAll) {
         git -C $subRepo bundle create $subBundle --all
     } else {
@@ -61,28 +94,28 @@ foreach ($path in $subPaths) {
     }
 }
 
-# 5) 创建差异报告
+# 5) Create diff report
 if ($CreateDiff) {
-    Write-Host "创建差异报告..." -ForegroundColor Green
+    Write-Host "Creating diff report..." -ForegroundColor Green
     $diffReport = Join-Path $OutputDir "$bundlePrefix`_diff_report.txt"
     
-    # 主仓库差异
+    # Main repo diff
     $mainDiff = git -C $RepoDir diff last-sync..HEAD --stat
-    "=== 主仓库差异 (last-sync..HEAD) ===" | Out-File $diffReport -Encoding UTF8
+    "=== Main repo diff (last-sync..HEAD) ===" | Out-File $diffReport -Encoding UTF8
     $mainDiff | Out-File $diffReport -Append -Encoding UTF8
     
-    # 子模块差异
+    # Submodule diffs
     foreach ($path in $subPaths) {
         $subRepo = Join-Path $RepoDir $path
         $subDiff = git -C $subRepo diff last-sync..HEAD --stat
         if ($subDiff) {
-            "`n=== 子模块 $path 差异 ===" | Out-File $diffReport -Append -Encoding UTF8
+            "\n=== Submodule $path diff ===" | Out-File $diffReport -Append -Encoding UTF8
             $subDiff | Out-File $diffReport -Append -Encoding UTF8
         }
     }
 }
 
-# 6) 创建同步信息文件
+# 6) Create sync info file
 $syncInfo = @{
     timestamp = $timestamp
     bundle_prefix = $bundlePrefix
@@ -90,6 +123,12 @@ $syncInfo = @{
     sub_bundles = @()
     created_at = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
     git_status = git -C $RepoDir status --porcelain
+    config_used = @{
+        repo_dir = $RepoDir
+        output_dir = $OutputDir
+        include_all = $IncludeAll
+        create_diff = $CreateDiff
+    }
 }
 
 foreach ($path in $subPaths) {
@@ -99,16 +138,16 @@ foreach ($path in $subPaths) {
 
 $syncInfo | ConvertTo-Json -Depth 3 | Out-File (Join-Path $OutputDir "$bundlePrefix`_info.json") -Encoding UTF8
 
-# 7) 显示结果
-Write-Host "`n✅ Bundle创建完成！" -ForegroundColor Green
-Write-Host "输出目录: $OutputDir" -ForegroundColor Cyan
-Write-Host "主仓库bundle: $bundlePrefix`_slam-core.bundle" -ForegroundColor Cyan
-Write-Host "子模块bundle数量: $($subPaths.Count)" -ForegroundColor Cyan
+# 7) Show results
+Write-Host "\nSUCCESS: Bundle creation completed!" -ForegroundColor Green
+Write-Host "Output directory: $OutputDir" -ForegroundColor Cyan
+Write-Host "Main repo bundle: $bundlePrefix`_slam-core.bundle" -ForegroundColor Cyan
+Write-Host "Submodule bundle count: $($subPaths.Count)" -ForegroundColor Cyan
 
 if ($CreateDiff) {
-    Write-Host "差异报告: $bundlePrefix`_diff_report.txt" -ForegroundColor Cyan
+    Write-Host "Diff report: $bundlePrefix`_diff_report.txt" -ForegroundColor Cyan
 }
 
-Write-Host "`n📋 下一步操作:" -ForegroundColor Yellow
-Write-Host "1. 将 $OutputDir 目录中的文件复制到Ubuntu" -ForegroundColor White
-Write-Host "2. 在Ubuntu上使用 import_local_bundles.sh 导入修改" -ForegroundColor White 
+Write-Host "\nNext steps:" -ForegroundColor Yellow
+Write-Host "1. Copy files from $OutputDir to Ubuntu" -ForegroundColor White
+Write-Host "2. Use import_local_bundles.sh on Ubuntu to import changes" -ForegroundColor White 

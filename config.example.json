@@ -1,0 +1,30 @@
+{
+  "paths": {
+    "windows": {
+      "repo_dir": "D:/Projects/github/slam-core",
+      "bundles_dir": "D:/Work/code/2025/0625/bundles",
+      "local_bundles_dir": "D:/Projects/github/slam-core/local-bundles",
+      "backup_dir": "D:/Projects/github/slam-core-backups"
+    },
+    "ubuntu": {
+      "repo_dir": "/work/develop_gitlab/slam-core",
+      "bundles_dir": "/work/develop_gitlab/slam-core/bundles",
+      "local_bundles_dir": "./local-bundles"
+    }
+  },
+  "git": {
+    "user_name": "Internal Bot",
+    "user_email": "internal@corp",
+    "allow_protocol": "file"
+  },
+  "sync": {
+    "backup_before_update": true,
+    "create_diff_report": true,
+    "auto_resolve_conflicts": false
+  },
+  "bundle": {
+    "include_all_branches": false,
+    "timestamp_format": "yyyyMMdd_HHmmss",
+    "local_prefix": "local_"
+  }
+} 

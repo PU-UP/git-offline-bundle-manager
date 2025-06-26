@@ -1,27 +1,32 @@
 <#
 .SYNOPSIS
-  自动化离线开发工作流：
-    1. 检查本地状态
-    2. 备份当前工作
-    3. 更新到最新bundle
-    4. 合并本地修改
-    5. 可选：创建本地bundle用于同步
+  Automated offline development workflow:
+    1. Check local status
+    2. Backup current work
+    3. Update to latest bundle
+    4. Merge local changes
+    5. Optional: Create local bundle for sync
 #>
 
 param (
-    [string]$RepoDir = 'D:\Projects\github\slam-core',
-    [string]$BundlesDir = 'D:\Work\code\2025\0625\bundles',
-    [switch]$CreateLocalBundle,    # 是否创建本地bundle
-    [switch]$AutoResolve,          # 自动解决冲突
-    [switch]$SkipBackup           # 跳过备份
+    [string]$ConfigFile = "config.json",
+    [string]$RepoDir,
+    [string]$BundlesDir,
+    [switch]$CreateLocalBundle,
+    [switch]$AutoResolve,
+    [switch]$SkipBackup
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+# Import config manager module
+$modulePath = Join-Path $PSScriptRoot "Config-Manager.psm1"
+Import-Module $modulePath -Force
+
 function Write-Step {
     param([string]$Message, [string]$Color = "Green")
-    Write-Host "`n=== $Message ===" -ForegroundColor $Color
+    Write-Host "\n=== $Message ===" -ForegroundColor $Color
 }
 
 function Confirm-Continue {
@@ -30,19 +35,44 @@ function Confirm-Continue {
     return $response -eq 'y' -or $response -eq 'Y'
 }
 
-# 0) 检查环境
-Write-Step "检查工作环境" "Cyan"
+# Read config
+try {
+    $config = Read-Config -ConfigFile $ConfigFile
+    $platform = Get-PlatformConfig -ConfigFile $ConfigFile
+    
+    # Use parameter override or config file paths
+    $RepoDir = if ($RepoDir) { $RepoDir } else { $platform.repo_dir }
+    $BundlesDir = if ($BundlesDir) { $BundlesDir } else { $platform.bundles_dir }
+    
+    # Use config file settings
+    $AutoResolve = if ($AutoResolve) { $AutoResolve } else { $config.sync.auto_resolve_conflicts }
+    $SkipBackup = if ($SkipBackup) { $SkipBackup } else { -not $config.sync.backup_before_update }
+    
+    Write-Host "Config:" -ForegroundColor Cyan
+    Write-Host "  Repo dir: $RepoDir" -ForegroundColor White
+    Write-Host "  Bundles dir: $BundlesDir" -ForegroundColor White
+    Write-Host "  Auto resolve conflicts: $AutoResolve" -ForegroundColor White
+    Write-Host "  Skip backup: $SkipBackup" -ForegroundColor White
+    
+} catch {
+    Write-Host "ERROR: Failed to read config: $($_.Exception.Message)" -ForegroundColor Red
+    Write-Host "Run .\Show-Config.ps1 to check config status" -ForegroundColor Yellow
+    exit 1
+}
+
+# 0) Check environment
+Write-Step "Checking work environment" "Cyan"
 
 if (-not (Test-Path $RepoDir)) {
-    throw "❌ 仓库目录不存在: $RepoDir"
+    throw "ERROR: Repo directory does not exist: $RepoDir"
 }
 
 if (-not (Test-Path $BundlesDir)) {
-    throw "❌ Bundles目录不存在: $BundlesDir"
+    throw "ERROR: Bundles directory does not exist: $BundlesDir"
 }
 
-# 1) 检查本地状态
-Write-Step "检查本地仓库状态" "Yellow"
+# 1) Check local status
+Write-Step "Checking local repo status" "Yellow"
 
 $mainStatus = git -C $RepoDir status --porcelain
 $subStatus = git -C $RepoDir submodule foreach --recursive 'git status --porcelain'
@@ -50,91 +80,91 @@ $subStatus = git -C $RepoDir submodule foreach --recursive 'git status --porcela
 $hasChanges = $mainStatus -or ($subStatus -and $subStatus -notmatch '^Entering')
 
 if ($hasChanges) {
-    Write-Host "⚠️  检测到本地修改:" -ForegroundColor Yellow
+    Write-Host "WARNING: Local changes detected:" -ForegroundColor Yellow
     if ($mainStatus) {
-        Write-Host "主仓库修改:" -ForegroundColor Red
+        Write-Host "Main repo changes:" -ForegroundColor Red
         Write-Host $mainStatus
     }
     if ($subStatus -and $subStatus -notmatch '^Entering') {
-        Write-Host "子模块修改:" -ForegroundColor Red
+        Write-Host "Submodule changes:" -ForegroundColor Red
         Write-Host $subStatus
     }
     
-    if (-not (Confirm-Continue "是否继续同步？")) {
-        Write-Host "操作已取消" -ForegroundColor Yellow
+    if (-not (Confirm-Continue "Continue with sync?")) {
+        Write-Host "Operation cancelled" -ForegroundColor Yellow
         exit 0
     }
 }
 
-# 2) 创建备份
+# 2) Create backup
 if (-not $SkipBackup) {
-    Write-Step "创建备份" "Yellow"
+    Write-Step "Creating backup" "Yellow"
     
     $backupDir = Join-Path (Split-Path $RepoDir) "$(Split-Path $RepoDir -Leaf)-backup-$(Get-Date -Format 'yyyyMMdd_HHmmss')"
     
-    if (Confirm-Continue "是否创建备份到 $backupDir？") {
+    if (Confirm-Continue "Create backup to $backupDir?") {
         & "$PSScriptRoot\Backup-BeforeUpdate.ps1" -RepoDir $RepoDir -BackupDir $backupDir
-        Write-Host "✅ 备份完成: $backupDir" -ForegroundColor Green
+        Write-Host "SUCCESS: Backup completed: $backupDir" -ForegroundColor Green
     }
 }
 
-# 3) 处理本地修改
+# 3) Handle local changes
 if ($hasChanges) {
-    Write-Step "处理本地修改" "Yellow"
+    Write-Step "Handling local changes" "Yellow"
     
     if ($AutoResolve) {
-        Write-Host "使用自动合并模式..." -ForegroundColor Cyan
+        Write-Host "Using auto-merge mode..." -ForegroundColor Cyan
         & "$PSScriptRoot\Merge-LocalChanges.ps1" -RepoDir $RepoDir -AutoResolve
     } else {
-        Write-Host "启动交互式合并..." -ForegroundColor Cyan
+        Write-Host "Starting interactive merge..." -ForegroundColor Cyan
         & "$PSScriptRoot\Interactive-Merge.ps1" -RepoDir $RepoDir
     }
 }
 
-# 4) 更新到最新bundle
-Write-Step "更新到最新bundle" "Green"
+# 4) Update to latest bundle
+Write-Step "Updating to latest bundle" "Green"
 
 try {
     & "$PSScriptRoot\Update-OfflineRepo.ps1" -RepoDir $RepoDir -BundlesDir $BundlesDir
-    Write-Host "✅ 更新完成" -ForegroundColor Green
+    Write-Host "SUCCESS: Update completed" -ForegroundColor Green
 } catch {
-    Write-Host "❌ 更新失败: $($_.Exception.Message)" -ForegroundColor Red
+    Write-Host "ERROR: Update failed: $($_.Exception.Message)" -ForegroundColor Red
     exit 1
 }
 
-# 5) 创建本地bundle（可选）
+# 5) Create local bundle (optional)
 if ($CreateLocalBundle) {
-    Write-Step "创建本地bundle" "Cyan"
+    Write-Step "Creating local bundle" "Cyan"
     
-    $localBundlesDir = Join-Path $RepoDir "local-bundles"
+    $localBundlesDir = $platform.local_bundles_dir
     
-    if (Confirm-Continue "是否创建本地bundle用于同步？") {
+    if (Confirm-Continue "Create local bundle for sync?") {
         try {
             & "$PSScriptRoot\Create-Bundle-From-Local.ps1" -RepoDir $RepoDir -OutputDir $localBundlesDir -CreateDiff
-            Write-Host "✅ 本地bundle创建完成" -ForegroundColor Green
-            Write-Host "📁 输出目录: $localBundlesDir" -ForegroundColor Cyan
+            Write-Host "SUCCESS: Local bundle creation completed" -ForegroundColor Green
+            Write-Host "Output directory: $localBundlesDir" -ForegroundColor Cyan
         } catch {
-            Write-Host "❌ 创建本地bundle失败: $($_.Exception.Message)" -ForegroundColor Red
+            Write-Host "ERROR: Failed to create local bundle: $($_.Exception.Message)" -ForegroundColor Red
         }
     }
 }
 
-# 6) 显示最终状态
-Write-Step "同步完成" "Green"
+# 6) Show final status
+Write-Step "Sync completed" "Green"
 
-Write-Host "当前仓库状态:" -ForegroundColor Cyan
+Write-Host "Current repo status:" -ForegroundColor Cyan
 git -C $RepoDir status --short
 
-Write-Host "`n子模块状态:" -ForegroundColor Cyan
+Write-Host "\nSubmodule status:" -ForegroundColor Cyan
 git -C $RepoDir submodule status --recursive
 
-Write-Host "`n📋 下一步建议:" -ForegroundColor Yellow
-Write-Host "1. 检查代码是否正常工作" -ForegroundColor White
-Write-Host "2. 运行测试确保质量" -ForegroundColor White
-Write-Host "3. 继续开发工作" -ForegroundColor White
+Write-Host "\nNext steps:" -ForegroundColor Yellow
+Write-Host "1. Check if code works properly" -ForegroundColor White
+Write-Host "2. Run tests to ensure quality" -ForegroundColor White
+Write-Host "3. Continue development work" -ForegroundColor White
 
 if ($CreateLocalBundle -and (Test-Path $localBundlesDir)) {
-    Write-Host "4. 将 $localBundlesDir 中的文件复制到Ubuntu进行同步" -ForegroundColor White
+    Write-Host "4. Copy files from $localBundlesDir to Ubuntu for sync" -ForegroundColor White
 }
 
-Write-Host "`n✅ 自动化同步工作流完成！" -ForegroundColor Green 
+Write-Host "\nSUCCESS: Automated sync workflow completed!" -ForegroundColor Green 
