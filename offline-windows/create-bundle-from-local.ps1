@@ -58,6 +58,100 @@ if (-not (Test-Path $LocalBundlesDir)) {
 $timestamp = Get-Date -Format $globalConfig.bundle.timestamp_format
 $bundlePrefix = "$($globalConfig.bundle.local_prefix)$timestamp"
 
+# 2.1) Get submodule paths (used in multiple places)
+$subPaths = git -C $RepoDir submodule status --recursive |
+            ForEach-Object { 
+                $line = $_.Trim()
+                if ($line -match '^\s*([a-f0-9]+)\s+(.+?)\s+\((.+)\)$') {
+                    $matches[2]  # 返回路径部分
+                }
+            } |
+            Where-Object { $_ -ne $null }
+
+# 2.5) Check for existing bundles and ask for confirmation to delete
+Write-Host "Checking for existing bundles..." -ForegroundColor Yellow
+$existingBundles = @()
+
+# Check main repo bundle
+$mainBundle = Join-Path $LocalBundlesDir "$bundlePrefix`_slam-core.bundle"
+if (Test-Path $mainBundle) {
+    $existingBundles += $mainBundle
+}
+
+# Check submodule bundles
+foreach ($path in $subPaths) {
+    $bundleName = ($path -replace '/', '_')
+    $subBundle = Join-Path $LocalBundlesDir "$bundlePrefix`_$bundleName.bundle"
+    if (Test-Path $subBundle) {
+        $existingBundles += $subBundle
+    }
+}
+
+# Check for info and diff report files
+$infoFile = Join-Path $LocalBundlesDir "$bundlePrefix`_info.json"
+if (Test-Path $infoFile) {
+    $existingBundles += $infoFile
+}
+
+if ($CreateDiff) {
+    $diffReport = Join-Path $LocalBundlesDir "$bundlePrefix`_$($globalConfig.bundle.main_repo_name)_diff_report.txt"
+    if (Test-Path $diffReport) {
+        $existingBundles += $diffReport
+    }
+}
+
+# Also check for any existing bundle files with the same prefix pattern (for testing purposes)
+# This allows testing the confirmation logic even with different timestamps
+$allExistingBundles = Get-ChildItem $LocalBundlesDir -File | Where-Object { 
+    $_.Name -match "^$($globalConfig.bundle.local_prefix).*\.bundle$" -or 
+    $_.Name -match "^$($globalConfig.bundle.local_prefix).*\.json$" -or
+    $_.Name -match "^$($globalConfig.bundle.local_prefix).*_diff_report\.txt$"
+}
+
+# Ask for confirmation if existing bundles found
+if ($existingBundles.Count -gt 0) {
+    Write-Host "Found existing bundle files with the same timestamp:" -ForegroundColor Yellow
+    foreach ($bundle in $existingBundles) {
+        Write-Host "  - $bundle" -ForegroundColor White
+    }
+    Write-Host ""
+    
+    if ($syncConfig.confirm_before_actions) {
+        $response = Read-Host "Do you want to delete these existing files and create new bundles? (y/N)"
+        if ($response -notmatch '^[yY]') {
+            Write-Host "Operation cancelled by user." -ForegroundColor Yellow
+            exit 0
+        }
+    }
+    
+    Write-Host "Deleting existing bundle files..." -ForegroundColor Green
+    foreach ($bundle in $existingBundles) {
+        Remove-Item $bundle -Force
+        Write-Host "  Deleted: $bundle" -ForegroundColor White
+    }
+    Write-Host ""
+} elseif ($allExistingBundles.Count -gt 0 -and $syncConfig.confirm_before_actions) {
+    # If no same-timestamp files but other bundle files exist, ask if user wants to clean up
+    Write-Host "Found other existing bundle files in the directory:" -ForegroundColor Yellow
+    foreach ($bundle in $allExistingBundles | Select-Object -First 5) {
+        Write-Host "  - $($bundle.Name)" -ForegroundColor White
+    }
+    if ($allExistingBundles.Count -gt 5) {
+        Write-Host "  ... and $($allExistingBundles.Count - 5) more files" -ForegroundColor White
+    }
+    Write-Host ""
+    
+    $response = Read-Host "Do you want to delete all existing bundle files before creating new ones? (y/N)"
+    if ($response -match '^[yY]') {
+        Write-Host "Deleting all existing bundle files..." -ForegroundColor Green
+        foreach ($bundle in $allExistingBundles) {
+            Remove-Item $bundle.FullName -Force
+            Write-Host "  Deleted: $($bundle.Name)" -ForegroundColor White
+        }
+        Write-Host ""
+    }
+}
+
 # 3) Create main repo bundle
 Write-Host "Creating main repo bundle..." -ForegroundColor Green
 $mainBundle = Join-Path $LocalBundlesDir "$bundlePrefix`_slam-core.bundle"
@@ -71,14 +165,6 @@ if ($IncludeAll) {
 
 # 4) Create submodule bundles
 Write-Host "Creating submodule bundles..." -ForegroundColor Green
-$subPaths = git -C $RepoDir submodule status --recursive |
-            ForEach-Object { 
-                $line = $_.Trim()
-                if ($line -match '^\s*([a-f0-9]+)\s+(.+?)\s+\((.+)\)$') {
-                    $matches[2]  # 返回路径部分
-                }
-            } |
-            Where-Object { $_ -ne $null }
 
 foreach ($path in $subPaths) {
     $bundleName = ($path -replace '/', '_')

@@ -82,6 +82,115 @@ fi
 timestamp=$(date +"$TIMESTAMP_FORMAT")
 bundle_prefix="${LOCAL_PREFIX}${timestamp}"
 
+# 2.1) Get submodule paths (used in multiple places)
+sub_paths=$(git submodule status --recursive | sed -n 's/^[[:space:]]*[a-f0-9]*[[:space:]]\+\([^[:space:]]\+\)[[:space:]]\+([^)]*)$/\1/p')
+
+# 2.5) Check for existing bundles and ask for confirmation to delete
+echo ">>> Checking for existing bundles..."
+existing_bundles=()
+
+# Check main repo bundle
+main_bundle="$OUTPUT_DIR/${bundle_prefix}_${MAIN_REPO_NAME}.bundle"
+if [[ -f "$main_bundle" ]]; then
+    existing_bundles+=("$main_bundle")
+fi
+
+# Check submodule bundles
+for path in $sub_paths; do
+    bundle_name=$(echo "$path" | tr '/' '_')
+    sub_bundle="$OUTPUT_DIR/${bundle_prefix}_${bundle_name}.bundle"
+    if [[ -f "$sub_bundle" ]]; then
+        existing_bundles+=("$sub_bundle")
+    fi
+done
+
+# Check for info and diff report files
+info_file="$OUTPUT_DIR/${bundle_prefix}_info.json"
+if [[ -f "$info_file" ]]; then
+    existing_bundles+=("$info_file")
+fi
+
+if [[ "$CREATE_DIFF" == "true" ]]; then
+    diff_report="$OUTPUT_DIR/${bundle_prefix}_${MAIN_REPO_NAME}_diff_report.txt"
+    if [[ -f "$diff_report" ]]; then
+        existing_bundles+=("$diff_report")
+    fi
+fi
+
+# Ask for confirmation if existing bundles found
+if [[ ${#existing_bundles[@]} -gt 0 ]]; then
+    echo ">>> Found existing bundle files with the same timestamp:"
+    for bundle in "${existing_bundles[@]}"; do
+        echo "  - $bundle"
+    done
+    echo ""
+    
+    # Check if confirmation is required from config
+    if command -v jq &> /dev/null && [[ -f "$CONFIG_FILE" ]]; then
+        confirm_required=$(jq -r ".environments.$PLATFORM.sync.confirm_before_actions // true" "$CONFIG_FILE" 2>/dev/null)
+    else
+        confirm_required="true"
+    fi
+    
+    if [[ "$confirm_required" == "true" ]]; then
+        read -p "Do you want to delete these existing files and create new bundles? (y/N): " response
+        if [[ ! "$response" =~ ^[yY] ]]; then
+            echo ">>> Operation cancelled by user."
+            exit 0
+        fi
+    fi
+    
+    echo ">>> Deleting existing bundle files..."
+    for bundle in "${existing_bundles[@]}"; do
+        rm -f "$bundle"
+        echo "  Deleted: $bundle"
+    done
+    echo ""
+else
+    # Check for any existing bundle files with the same prefix pattern
+    all_existing_bundles=()
+    if [[ -d "$OUTPUT_DIR" ]]; then
+        while IFS= read -r -d '' file; do
+            filename=$(basename "$file")
+            if [[ "$filename" =~ ^${LOCAL_PREFIX}.*\.bundle$ ]] || \
+               [[ "$filename" =~ ^${LOCAL_PREFIX}.*\.json$ ]] || \
+               [[ "$filename" =~ ^${LOCAL_PREFIX}.*_diff_report\.txt$ ]]; then
+                all_existing_bundles+=("$file")
+            fi
+        done < <(find "$OUTPUT_DIR" -maxdepth 1 -type f -print0 2>/dev/null)
+    fi
+    
+    if [[ ${#all_existing_bundles[@]} -gt 0 ]]; then
+        # Check if confirmation is required from config
+        if command -v jq &> /dev/null && [[ -f "$CONFIG_FILE" ]]; then
+            confirm_required=$(jq -r ".environments.$PLATFORM.sync.confirm_before_actions // true" "$CONFIG_FILE" 2>/dev/null)
+        else
+            confirm_required="true"
+        fi
+        
+        if [[ "$confirm_required" == "true" ]]; then
+            echo ">>> Found other existing bundle files in the directory:"
+            for bundle in "${all_existing_bundles[@]:0:5}"; do
+                echo "  - $(basename "$bundle")"
+            done
+            if [[ ${#all_existing_bundles[@]} -gt 5 ]]; then
+                echo "  ... and $((${#all_existing_bundles[@]} - 5)) more files"
+            fi
+            echo ""
+            
+            read -p "Do you want to delete all existing bundle files before creating new ones? (y/N): " response
+            if [[ "$response" =~ ^[yY] ]]; then
+                echo ">>> Deleting all existing bundle files..."
+                for bundle in "${all_existing_bundles[@]}"; do
+                    rm -f "$bundle"
+                    echo "  Deleted: $(basename "$bundle")"
+                done
+                echo ""
+            fi
+        fi
+    fi
+fi
+
 # 3) Create main repo bundle
 echo ">>> Creating main repo bundle..."
 main_bundle="$OUTPUT_DIR/${bundle_prefix}_${MAIN_REPO_NAME}.bundle"
@@ -96,8 +205,6 @@ fi
 
 # 4) Create submodule bundles
 echo ">>> Creating submodule bundles..."
-sub_paths=$(git submodule status --recursive | sed -n 's/^[[:space:]]*[a-f0-9]*[[:space:]]\+\([^[:space:]]\+\)[[:space:]]\+([^)]*)$/\1/p')
-
 for path in $sub_paths; do
     bundle_name=$(echo "$path" | tr '/' '_')
     sub_bundle="$OUTPUT_DIR/${bundle_prefix}_${bundle_name}.bundle"
