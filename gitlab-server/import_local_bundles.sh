@@ -14,17 +14,28 @@ if [[ -f "$CONFIG_FILE" ]]; then
     echo ">>> Reading config file: $CONFIG_FILE"
     # Use jq to parse config file (if available)
     if command -v jq &> /dev/null; then
-        ROOT=$(jq -r '.paths.ubuntu.repo_dir // empty' "$CONFIG_FILE" 2>/dev/null || echo "$DEFAULT_ROOT")
-        DEFAULT_LOCAL_BUNDLES_DIR=$(jq -r '.paths.ubuntu.local_bundles_dir // empty' "$CONFIG_FILE" 2>/dev/null || echo "$DEFAULT_LOCAL_BUNDLES_DIR")
+        # Check if platform is forced
+        FORCE_PLATFORM=$(jq -r '.platform.force_platform // empty' "$CONFIG_FILE" 2>/dev/null)
+        if [[ -n "$FORCE_PLATFORM" ]]; then
+            PLATFORM="$FORCE_PLATFORM"
+        else
+            PLATFORM="ubuntu"
+        fi
+        
+        ROOT=$(jq -r ".paths.$PLATFORM.repo_dir // empty" "$CONFIG_FILE" 2>/dev/null || echo "$DEFAULT_ROOT")
+        DEFAULT_LOCAL_BUNDLES_DIR=$(jq -r ".paths.$PLATFORM.local_bundles_dir // empty" "$CONFIG_FILE" 2>/dev/null || echo "$DEFAULT_LOCAL_BUNDLES_DIR")
+        MAIN_REPO_NAME=$(jq -r '.bundle.main_repo_name // "slam-core"' "$CONFIG_FILE" 2>/dev/null)
     else
         echo ">>> jq not installed, using default config"
         ROOT="$DEFAULT_ROOT"
         DEFAULT_LOCAL_BUNDLES_DIR="$DEFAULT_LOCAL_BUNDLES_DIR"
+        MAIN_REPO_NAME="slam-core"
     fi
 else
     echo ">>> Config file not found, using default config"
     ROOT="$DEFAULT_ROOT"
     DEFAULT_LOCAL_BUNDLES_DIR="$DEFAULT_LOCAL_BUNDLES_DIR"
+    MAIN_REPO_NAME="slam-core"
 fi
 
 # Environment variable overrides
@@ -38,6 +49,7 @@ LOCAL_BUNDLES_DIR=${2:-"$DEFAULT_LOCAL_BUNDLES_DIR"}
 echo ">>> Using config:"
 echo "    Repo root: $ROOT"
 echo "    Local bundles dir: $LOCAL_BUNDLES_DIR"
+echo "    Main repo name: $MAIN_REPO_NAME"
 
 if [[ -z "$BUNDLE_PREFIX" ]]; then
     echo "ERROR: Please specify bundle prefix"
@@ -79,10 +91,10 @@ if command -v jq &> /dev/null; then
 else
     echo ">>> jq not installed, using simple parsing"
     # Simple parsing, assuming fixed format
-    MAIN_BUNDLE="${BUNDLE_PREFIX}_slam-core.bundle"
+    MAIN_BUNDLE="${BUNDLE_PREFIX}_$MAIN_REPO_NAME.bundle"
     CREATED_AT="Unknown"
     # Find all submodule bundles
-    SUB_BUNDLES=$(ls "$LOCAL_BUNDLES_DIR"/${BUNDLE_PREFIX}_*.bundle 2>/dev/null | grep -v "${BUNDLE_PREFIX}_slam-core.bundle" | sed 's/.*\///' || true)
+    SUB_BUNDLES=$(ls "$LOCAL_BUNDLES_DIR"/${BUNDLE_PREFIX}_*.bundle 2>/dev/null | grep -v "${BUNDLE_PREFIX}_$MAIN_REPO_NAME.bundle" | sed 's/.*\///' || true)
 fi
 
 echo ">>> Created at: $CREATED_AT"

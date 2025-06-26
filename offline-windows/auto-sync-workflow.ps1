@@ -8,15 +8,6 @@
     5. Optional: Create local bundle for sync
 #>
 
-param (
-    [string]$ConfigFile = "config.json",
-    [string]$RepoDir,
-    [string]$BundlesDir,
-    [switch]$CreateLocalBundle,
-    [switch]$AutoResolve,
-    [switch]$SkipBackup
-)
-
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
@@ -26,7 +17,8 @@ Import-Module $modulePath -Force
 
 function Write-Step {
     param([string]$Message, [string]$Color = "Green")
-    Write-Host "\n=== $Message ===" -ForegroundColor $Color
+    Write-Host ""
+    Write-Host "=== $Message ===" -ForegroundColor $Color
 }
 
 function Confirm-Continue {
@@ -37,16 +29,14 @@ function Confirm-Continue {
 
 # Read config
 try {
-    $config = Read-Config -ConfigFile $ConfigFile
-    $platform = Get-PlatformConfig -ConfigFile $ConfigFile
+    $config = Read-Config
+    $platform = Get-PlatformConfig
     
-    # Use parameter override or config file paths
-    $RepoDir = if ($RepoDir) { $RepoDir } else { $platform.repo_dir }
-    $BundlesDir = if ($BundlesDir) { $BundlesDir } else { $platform.bundles_dir }
-    
-    # Use config file settings
-    $AutoResolve = if ($AutoResolve) { $AutoResolve } else { $config.sync.auto_resolve_conflicts }
-    $SkipBackup = if ($SkipBackup) { $SkipBackup } else { -not $config.sync.backup_before_update }
+    $RepoDir = $platform.repo_dir
+    $BundlesDir = $platform.bundles_dir
+    $AutoResolve = $config.sync.auto_resolve_conflicts
+    $SkipBackup = -not $config.sync.backup_before_update
+    $CreateLocalBundle = $false  # Default to false, can be enabled via config if needed
     
     Write-Host "Config:" -ForegroundColor Cyan
     Write-Host "  Repo dir: $RepoDir" -ForegroundColor White
@@ -100,11 +90,9 @@ if ($hasChanges) {
 if (-not $SkipBackup) {
     Write-Step "Creating backup" "Yellow"
     
-    $backupDir = Join-Path (Split-Path $RepoDir) "$(Split-Path $RepoDir -Leaf)-backup-$(Get-Date -Format 'yyyyMMdd_HHmmss')"
-    
-    if (Confirm-Continue "Create backup to $backupDir?") {
-        & "$PSScriptRoot\Backup-BeforeUpdate.ps1" -RepoDir $RepoDir -BackupDir $backupDir
-        Write-Host "SUCCESS: Backup completed: $backupDir" -ForegroundColor Green
+    if (Confirm-Continue "Create backup before update?") {
+        & "$PSScriptRoot\Backup-BeforeUpdate.ps1"
+        Write-Host "SUCCESS: Backup completed" -ForegroundColor Green
     }
 }
 
@@ -114,10 +102,10 @@ if ($hasChanges) {
     
     if ($AutoResolve) {
         Write-Host "Using auto-merge mode..." -ForegroundColor Cyan
-        & "$PSScriptRoot\Merge-LocalChanges.ps1" -RepoDir $RepoDir -AutoResolve
+        & "$PSScriptRoot\Merge-LocalChanges.ps1"
     } else {
         Write-Host "Starting interactive merge..." -ForegroundColor Cyan
-        & "$PSScriptRoot\Interactive-Merge.ps1" -RepoDir $RepoDir
+        & "$PSScriptRoot\Interactive-Merge.ps1"
     }
 }
 
@@ -125,7 +113,7 @@ if ($hasChanges) {
 Write-Step "Updating to latest bundle" "Green"
 
 try {
-    & "$PSScriptRoot\Update-OfflineRepo.ps1" -RepoDir $RepoDir -BundlesDir $BundlesDir
+    & "$PSScriptRoot\Update-OfflineRepo.ps1"
     Write-Host "SUCCESS: Update completed" -ForegroundColor Green
 } catch {
     Write-Host "ERROR: Update failed: $($_.Exception.Message)" -ForegroundColor Red
@@ -140,7 +128,7 @@ if ($CreateLocalBundle) {
     
     if (Confirm-Continue "Create local bundle for sync?") {
         try {
-            & "$PSScriptRoot\Create-Bundle-From-Local.ps1" -RepoDir $RepoDir -OutputDir $localBundlesDir -CreateDiff
+            & "$PSScriptRoot\Create-Bundle-From-Local.ps1"
             Write-Host "SUCCESS: Local bundle creation completed" -ForegroundColor Green
             Write-Host "Output directory: $localBundlesDir" -ForegroundColor Cyan
         } catch {
@@ -155,10 +143,12 @@ Write-Step "Sync completed" "Green"
 Write-Host "Current repo status:" -ForegroundColor Cyan
 git -C $RepoDir status --short
 
-Write-Host "\nSubmodule status:" -ForegroundColor Cyan
+Write-Host ""
+Write-Host "Submodule status:" -ForegroundColor Cyan
 git -C $RepoDir submodule status --recursive
 
-Write-Host "\nNext steps:" -ForegroundColor Yellow
+Write-Host ""
+Write-Host "Next steps:" -ForegroundColor Yellow
 Write-Host "1. Check if code works properly" -ForegroundColor White
 Write-Host "2. Run tests to ensure quality" -ForegroundColor White
 Write-Host "3. Continue development work" -ForegroundColor White
@@ -167,4 +157,5 @@ if ($CreateLocalBundle -and (Test-Path $localBundlesDir)) {
     Write-Host "4. Copy files from $localBundlesDir to Ubuntu for sync" -ForegroundColor White
 }
 
-Write-Host "\nSUCCESS: Automated sync workflow completed!" -ForegroundColor Green 
+Write-Host ""
+Write-Host "SUCCESS: Automated sync workflow completed!" -ForegroundColor Green 

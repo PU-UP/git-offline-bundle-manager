@@ -7,14 +7,6 @@
     4. Prepare sync files
 #>
 
-param (
-    [string]$ConfigFile = "config.json",
-    [string]$RepoDir,
-    [string]$OutputDir,
-    [switch]$IncludeAll,
-    [switch]$CreateDiff
-)
-
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
@@ -24,16 +16,13 @@ Import-Module $modulePath -Force
 
 # Read config
 try {
-    $config = Read-Config -ConfigFile $ConfigFile
-    $platform = Get-PlatformConfig -ConfigFile $ConfigFile
+    $config = Read-Config
+    $platform = Get-PlatformConfig
     
-    # Use parameter override or config file paths
-    $RepoDir = if ($RepoDir) { $RepoDir } else { $platform.repo_dir }
-    $OutputDir = if ($OutputDir) { $OutputDir } else { $platform.local_bundles_dir }
-    
-    # Use config file settings
-    $IncludeAll = if ($IncludeAll) { $IncludeAll } else { $config.bundle.include_all_branches }
-    $CreateDiff = if ($CreateDiff) { $CreateDiff } else { $config.sync.create_diff_report }
+    $RepoDir = $platform.repo_dir
+    $OutputDir = $platform.local_bundles_dir
+    $IncludeAll = $config.bundle.include_all_branches
+    $CreateDiff = $config.sync.create_diff_report
     
     Write-Host "Config:" -ForegroundColor Cyan
     Write-Host "  Repo dir: $RepoDir" -ForegroundColor White
@@ -109,7 +98,8 @@ if ($CreateDiff) {
         $subRepo = Join-Path $RepoDir $path
         $subDiff = git -C $subRepo diff last-sync..HEAD --stat
         if ($subDiff) {
-            "\n=== Submodule $path diff ===" | Out-File $diffReport -Append -Encoding UTF8
+            ""
+            "=== Submodule $path diff ===" | Out-File $diffReport -Append -Encoding UTF8
             $subDiff | Out-File $diffReport -Append -Encoding UTF8
         }
     }
@@ -139,7 +129,8 @@ foreach ($path in $subPaths) {
 $syncInfo | ConvertTo-Json -Depth 3 | Out-File (Join-Path $OutputDir "$bundlePrefix`_info.json") -Encoding UTF8
 
 # 7) Show results
-Write-Host "\nSUCCESS: Bundle creation completed!" -ForegroundColor Green
+Write-Host ""
+Write-Host "SUCCESS: Bundle creation completed!" -ForegroundColor Green
 Write-Host "Output directory: $OutputDir" -ForegroundColor Cyan
 Write-Host "Main repo bundle: $bundlePrefix`_slam-core.bundle" -ForegroundColor Cyan
 Write-Host "Submodule bundle count: $($subPaths.Count)" -ForegroundColor Cyan
@@ -148,6 +139,7 @@ if ($CreateDiff) {
     Write-Host "Diff report: $bundlePrefix`_diff_report.txt" -ForegroundColor Cyan
 }
 
-Write-Host "\nNext steps:" -ForegroundColor Yellow
+Write-Host ""
+Write-Host "Next steps:" -ForegroundColor Yellow
 Write-Host "1. Copy files from $OutputDir to Ubuntu" -ForegroundColor White
 Write-Host "2. Use import_local_bundles.sh on Ubuntu to import changes" -ForegroundColor White 

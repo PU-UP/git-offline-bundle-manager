@@ -3,12 +3,28 @@
 Interactive merge for resolving conflicts
 #>
 
-param(
-    [string]$RepoDir
-)
-
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+
+# Import config manager module
+$modulePath = Join-Path $PSScriptRoot "Config-Manager.psm1"
+Import-Module $modulePath -Force
+
+# Read config
+try {
+    $config = Read-Config
+    $platform = Get-PlatformConfig
+    
+    $RepoDir = $platform.repo_dir
+    
+    Write-Host "Config:" -ForegroundColor Cyan
+    Write-Host "  Repo dir: $RepoDir" -ForegroundColor White
+    
+} catch {
+    Write-Host "ERROR: Failed to read config: $($_.Exception.Message)" -ForegroundColor Red
+    Write-Host "Run .\Show-Config.ps1 to check config status" -ForegroundColor Yellow
+    exit 1
+}
 
 Write-Host "Starting interactive merge..." -ForegroundColor Yellow
 
@@ -25,14 +41,16 @@ foreach ($file in $conflicts) {
     Write-Host "  $file" -ForegroundColor White
 }
 
-Write-Host "\nOptions:" -ForegroundColor Yellow
+Write-Host ""
+Write-Host "Options:" -ForegroundColor Yellow
 Write-Host "1. Use 'ours' (local changes)" -ForegroundColor White
 Write-Host "2. Use 'theirs' (incoming changes)" -ForegroundColor White
 Write-Host "3. Manual edit" -ForegroundColor White
 Write-Host "4. Skip this file" -ForegroundColor White
 
 foreach ($file in $conflicts) {
-    Write-Host "\nResolving: $file" -ForegroundColor Cyan
+    Write-Host ""
+    Write-Host "Resolving: $file" -ForegroundColor Cyan
     
     $choice = Read-Host "Choose option (1-4)"
     
@@ -70,12 +88,14 @@ foreach ($file in $conflicts) {
 $remainingConflicts = git -C $RepoDir diff --name-only --diff-filter=U
 
 if ($remainingConflicts) {
-    Write-Host "\nWARNING: Some conflicts remain:" -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host "WARNING: Some conflicts remain:" -ForegroundColor Yellow
     foreach ($file in $remainingConflicts) {
         Write-Host "  $file" -ForegroundColor White
     }
     Write-Host "Please resolve manually and run: git add ." -ForegroundColor White
 } else {
-    Write-Host "\nSUCCESS: All conflicts resolved" -ForegroundColor Green
+    Write-Host ""
+    Write-Host "SUCCESS: All conflicts resolved" -ForegroundColor Green
     Write-Host "Run: git commit to complete merge" -ForegroundColor White
 } 

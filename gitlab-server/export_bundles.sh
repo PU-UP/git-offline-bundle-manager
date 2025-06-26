@@ -14,17 +14,28 @@ if [[ -f "$CONFIG_FILE" ]]; then
     echo ">>> Reading config file: $CONFIG_FILE"
     # Use jq to parse config file (if available)
     if command -v jq &> /dev/null; then
-        ROOT=$(jq -r '.paths.ubuntu.repo_dir // empty' "$CONFIG_FILE" 2>/dev/null || echo "$DEFAULT_ROOT")
-        OUT=$(jq -r '.paths.ubuntu.bundles_dir // empty' "$CONFIG_FILE" 2>/dev/null || echo "$DEFAULT_OUTPUT")
+        # Check if platform is forced
+        FORCE_PLATFORM=$(jq -r '.platform.force_platform // empty' "$CONFIG_FILE" 2>/dev/null)
+        if [[ -n "$FORCE_PLATFORM" ]]; then
+            PLATFORM="$FORCE_PLATFORM"
+        else
+            PLATFORM="ubuntu"
+        fi
+        
+        ROOT=$(jq -r ".paths.$PLATFORM.repo_dir // empty" "$CONFIG_FILE" 2>/dev/null || echo "$DEFAULT_ROOT")
+        OUT=$(jq -r ".paths.$PLATFORM.bundles_dir // empty" "$CONFIG_FILE" 2>/dev/null || echo "$DEFAULT_OUTPUT")
+        MAIN_REPO_NAME=$(jq -r '.bundle.main_repo_name // "slam-core"' "$CONFIG_FILE" 2>/dev/null)
     else
         echo ">>> jq not installed, using default config"
         ROOT="$DEFAULT_ROOT"
         OUT="$DEFAULT_OUTPUT"
+        MAIN_REPO_NAME="slam-core"
     fi
 else
     echo ">>> Config file not found, using default config"
     ROOT="$DEFAULT_ROOT"
     OUT="$DEFAULT_OUTPUT"
+    MAIN_REPO_NAME="slam-core"
 fi
 
 # Environment variable overrides
@@ -39,6 +50,7 @@ fi
 echo ">>> Using config:"
 echo "    Repo root: $ROOT"
 echo "    Output dir: $OUT"
+echo "    Main repo name: $MAIN_REPO_NAME"
 
 # Check repo directory
 if [[ ! -d "$ROOT" ]]; then
@@ -51,7 +63,7 @@ mkdir -p "$OUT"
 
 echo ">>> Bundling super-project"
 cd "$ROOT"
-git bundle create "$OUT/slam-core.bundle" --all
+git bundle create "$OUT/$MAIN_REPO_NAME.bundle" --all
 
 echo ">>> Bundling submodules"
 export OUT                                 # Make available to subprocesses

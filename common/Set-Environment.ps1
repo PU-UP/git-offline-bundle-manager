@@ -3,12 +3,6 @@
 Set environment variables for Git offline tool
 #>
 
-param(
-    [string]$ConfigFile = "config.json",
-    [switch]$ShowCurrent,
-    [switch]$ClearAll
-)
-
 # Import config manager module
 $modulePath = Join-Path $PSScriptRoot "Config-Manager.psm1"
 Import-Module $modulePath -Force
@@ -51,10 +45,9 @@ function Clear-EnvironmentVariables {
 }
 
 function Set-EnvironmentFromConfig {
-    param([string]$ConfigFile)
     try {
-        $config = Read-Config -ConfigFile $ConfigFile
-        $platform = Get-PlatformConfig -ConfigFile $ConfigFile
+        $config = Read-Config
+        $platform = Get-PlatformConfig
         Write-Host "Setting environment variables from config file..." -ForegroundColor Yellow
         [Environment]::SetEnvironmentVariable("GIT_OFFLINE_REPO_DIR", $platform.repo_dir, "User")
         [Environment]::SetEnvironmentVariable("GIT_OFFLINE_BUNDLES_DIR", $platform.bundles_dir, "User")
@@ -71,16 +64,19 @@ function Set-EnvironmentFromConfig {
     }
 }
 
-if ($ShowCurrent) {
+# Check command line arguments
+$args = $args -join " "
+if ($args -match "-ShowCurrent" -or $args -match "--show-current") {
     Show-EnvironmentVariables
-} elseif ($ClearAll) {
+} elseif ($args -match "-ClearAll" -or $args -match "--clear-all") {
     Clear-EnvironmentVariables
 } else {
-    Set-EnvironmentFromConfig -ConfigFile $ConfigFile
+    Set-EnvironmentFromConfig
     Show-EnvironmentVariables
 }
 
-Write-Host "\nINFO:" -ForegroundColor Yellow
+Write-Host ""
+Write-Host "INFO:" -ForegroundColor Yellow
 Write-Host "1. Environment variables are set at user level. Restart PowerShell to take effect." -ForegroundColor White
 Write-Host "2. Use -ShowCurrent to view current environment variables." -ForegroundColor White
 Write-Host "3. Use -ClearAll to clear all environment variables." -ForegroundColor White 

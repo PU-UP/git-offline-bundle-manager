@@ -7,12 +7,6 @@
     4. Tag last-sync for main & submodules
 #>
 
-param (
-    [string]$ConfigFile = "config.json",
-    [string]$BundlesDir,
-    [string]$RepoDir
-)
-
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
@@ -22,10 +16,10 @@ Import-Module $modulePath -Force
 
 # Read config
 try {
-    $config = Read-Config -ConfigFile $ConfigFile
-    $platform = Get-PlatformConfig -ConfigFile $ConfigFile
-    $BundlesDir = if ($BundlesDir) { $BundlesDir } else { $platform.bundles_dir }
-    $RepoDir = if ($RepoDir) { $RepoDir } else { $platform.repo_dir }
+    $config = Read-Config
+    $platform = Get-PlatformConfig
+    $BundlesDir = $platform.bundles_dir
+    $RepoDir = $platform.repo_dir
     Write-Host "Config:" -ForegroundColor Cyan
     Write-Host "  Bundles dir: $BundlesDir" -ForegroundColor White
     Write-Host "  Repo dir: $RepoDir" -ForegroundColor White
@@ -71,7 +65,7 @@ foreach ($bundle in $bundleFiles) {
         Write-Host "  Unpack: $($bundle.Name)" -ForegroundColor White
         git clone --bare $bundle.FullName $target
     } else {
-        Write-Host "  Exists: $($bundle.Name)" -ForegroundColor Gray
+        Write-Host "  Exists: $($bundle.Name)" -ForegroundColor White
     }
 }
 
@@ -102,7 +96,8 @@ Write-Host "Tagging last-sync..." -ForegroundColor Green
 git -C $RepoDir tag -f last-sync
 git -C $RepoDir submodule foreach --recursive 'git tag -f last-sync'
 
-Write-Host "\nSUCCESS: Offline repo ready: $RepoDir" -ForegroundColor Green
+Write-Host ""
+Write-Host "SUCCESS: Offline repo ready: $RepoDir" -ForegroundColor Green
 Write-Host "Next steps:" -ForegroundColor Yellow
 Write-Host "1. Check repo status: git -C $RepoDir status" -ForegroundColor White
 Write-Host "2. Start development" -ForegroundColor White
