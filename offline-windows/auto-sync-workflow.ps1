@@ -52,7 +52,25 @@ function Update-FromBundle {
     $mainBundle = Join-Path $BundlesDir "slam-core.bundle"
     if (Test-Path $mainBundle) {
         Write-Host "Updating main repo from bundle..." -ForegroundColor Cyan
+        
+        # Get current branches before update
+        $currentBranches = git -C $RepoDir branch -r | ForEach-Object { $_.Trim() }
+        
+        # Fetch all branches from bundle
         git -C $RepoDir fetch $mainBundle "refs/heads/*:refs/heads/*" --update-head-ok
+        
+        # Get branches after update
+        $newBranches = git -C $RepoDir branch -r | ForEach-Object { $_.Trim() }
+        
+        # Check for new branches
+        $newBranchList = $newBranches | Where-Object { $_ -notin $currentBranches }
+        if ($newBranchList) {
+            Write-Host "  New branches detected:" -ForegroundColor Yellow
+            foreach ($branch in $newBranchList) {
+                Write-Host "    - $branch" -ForegroundColor White
+            }
+            Write-Host "  Consider switching to new branches if needed" -ForegroundColor Cyan
+        }
     } else {
         throw "ERROR: Main bundle not found: $mainBundle"
     }
@@ -78,7 +96,25 @@ function Update-FromBundle {
     
     # Update last-sync tags
     Write-Host "Updating sync tags..." -ForegroundColor Cyan
+    
+    # 获取所有分支
+    $allBranches = git -C $RepoDir branch -r | ForEach-Object { 
+        if ($_ -match '^\s*origin/(.+)$') { $matches[1] }
+    }
+    
+    # 为每个分支更新last-sync标签
+    foreach ($branch in $allBranches) {
+        $syncMode = Get-BranchSyncMode -BranchName $branch -SyncStrategy $syncStrategy
+        if ($syncMode -eq "tracked") {
+            Write-Host "  Updating last-sync tag for tracked branch: $branch" -ForegroundColor Gray
+            git -C $RepoDir tag -f "last-sync-$branch" "origin/$branch"
+        }
+    }
+    
+    # 更新主last-sync标签（用于向后兼容）
     git -C $RepoDir tag -f last-sync
+    
+    # 更新子模块的last-sync标签
     git -C $RepoDir submodule foreach --recursive 'git tag -f last-sync'
 }
 
@@ -100,6 +136,7 @@ try {
     $config = Read-Config
     $platform = Get-PathConfig
     $syncConfig = Get-SyncConfig
+    $syncStrategy = Get-SyncStrategyConfig
     
     $RepoDir = $platform.repo_dir
     $BundlesDir = $platform.bundles_dir
@@ -117,6 +154,7 @@ try {
     Write-Host "  Backup dir: $BackupDir" -ForegroundColor White
     Write-Host "  Auto resolve conflicts: $AutoResolve" -ForegroundColor White
     Write-Host "  Skip backup: $SkipBackup" -ForegroundColor White
+    Write-Host "  Sync mode: $($syncStrategy.sync_mode)" -ForegroundColor White
     
 } catch {
     Write-Host "ERROR: Failed to read config: $($_.Exception.Message)" -ForegroundColor Red

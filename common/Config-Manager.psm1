@@ -338,6 +338,72 @@ function Get-GlobalConfig {
     return $script:Config.global
 }
 
+# 获取同步策略配置
+function Get-SyncStrategyConfig {
+    if ($null -eq $script:Config) {
+        Read-Config
+    }
+    
+    if ($script:Config.global -and $script:Config.global.bundle -and $script:Config.global.bundle.sync_strategy) {
+        return $script:Config.global.bundle.sync_strategy
+    }
+    
+    # 返回默认配置
+    return @{
+        tracked_branches = @("main", "develop")
+        untracked_branches = @("feature/*", "hotfix/*")
+        sync_mode = "selective"
+        default_behavior = "latest"
+    }
+}
+
+# 检查分支是否应该被跟踪
+function Test-BranchTracked {
+    param(
+        [string]$BranchName,
+        [object]$SyncStrategy = $null
+    )
+    
+    if ($null -eq $SyncStrategy) {
+        $SyncStrategy = Get-SyncStrategyConfig
+    }
+    
+    # 检查是否在跟踪分支列表中
+    foreach ($pattern in $SyncStrategy.tracked_branches) {
+        if ($BranchName -eq $pattern -or $BranchName -match $pattern) {
+            return $true
+        }
+    }
+    
+    # 检查是否在非跟踪分支列表中
+    foreach ($pattern in $SyncStrategy.untracked_branches) {
+        if ($BranchName -eq $pattern -or $BranchName -match $pattern) {
+            return $false
+        }
+    }
+    
+    # 默认行为
+    return $SyncStrategy.default_behavior -eq "tracked"
+}
+
+# 获取分支的同步模式
+function Get-BranchSyncMode {
+    param(
+        [string]$BranchName,
+        [object]$SyncStrategy = $null
+    )
+    
+    if ($null -eq $SyncStrategy) {
+        $SyncStrategy = Get-SyncStrategyConfig
+    }
+    
+    if (Test-BranchTracked -BranchName $BranchName -SyncStrategy $SyncStrategy) {
+        return "tracked"  # 使用last-sync标签
+    } else {
+        return "latest"   # 直接更新到最新
+    }
+}
+
 # 导出模块成员
 Export-ModuleMember -Function @(
     'Get-ConfigValue',
@@ -349,5 +415,8 @@ Export-ModuleMember -Function @(
     'Get-PathConfig',
     'Get-GitConfig',
     'Get-SyncConfig',
-    'Get-GlobalConfig'
+    'Get-GlobalConfig',
+    'Get-SyncStrategyConfig',
+    'Test-BranchTracked',
+    'Get-BranchSyncMode'
 ) 

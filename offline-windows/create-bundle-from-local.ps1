@@ -20,6 +20,7 @@ try {
     $platform = Get-PathConfig
     $globalConfig = Get-GlobalConfig
     $syncConfig = Get-SyncConfig
+    $syncStrategy = Get-SyncStrategyConfig
     
     $RepoDir = $platform.repo_dir
     $BundlesDir = $platform.bundles_dir
@@ -34,6 +35,8 @@ try {
     Write-Host "  Local bundles dir: $LocalBundlesDir" -ForegroundColor White
     Write-Host "  Include all branches: $IncludeAll" -ForegroundColor White
     Write-Host "  Create diff report: $CreateDiff" -ForegroundColor White
+    Write-Host "  Sync mode: $($syncStrategy.sync_mode)" -ForegroundColor White
+    Write-Host "  Tracked branches: $($syncStrategy.tracked_branches -join ', ')" -ForegroundColor White
     
 } catch {
     Write-Host "ERROR: Failed to read config: $($_.Exception.Message)" -ForegroundColor Red
@@ -162,8 +165,21 @@ $mainBundle = Join-Path $LocalBundlesDir "$bundlePrefix`_slam-core.bundle"
 if ($IncludeAll) {
     git -C $RepoDir bundle create $mainBundle --all
 } else {
-    # Only include current branch and last-sync tag
-    git -C $RepoDir bundle create $mainBundle HEAD last-sync
+    # 根据同步策略创建bundle
+    $currentBranch = git -C $RepoDir branch --show-current
+    $syncMode = Get-BranchSyncMode -BranchName $currentBranch -SyncStrategy $syncStrategy
+    
+    Write-Host "  Current branch: $currentBranch (sync mode: $syncMode)" -ForegroundColor Cyan
+    
+    if ($syncMode -eq "tracked") {
+        # 使用last-sync标签进行增量同步
+        Write-Host "  Creating incremental bundle with last-sync tag..." -ForegroundColor White
+        git -C $RepoDir bundle create $mainBundle HEAD last-sync
+    } else {
+        # 直接包含当前分支的最新状态
+        Write-Host "  Creating latest bundle for untracked branch..." -ForegroundColor White
+        git -C $RepoDir bundle create $mainBundle HEAD
+    }
 }
 
 # 4) Create submodule bundles
@@ -180,7 +196,21 @@ foreach ($path in $subPaths) {
         if ($IncludeAll) {
             git -C $subRepo bundle create $subBundle --all
         } else {
-            git -C $subRepo bundle create $subBundle HEAD last-sync
+            # 根据同步策略创建子模块bundle
+            $subCurrentBranch = git -C $subRepo branch --show-current 2>$null
+            if ($subCurrentBranch) {
+                $subSyncMode = Get-BranchSyncMode -BranchName $subCurrentBranch -SyncStrategy $syncStrategy
+                Write-Host "    Submodule branch: $subCurrentBranch (sync mode: $subSyncMode)" -ForegroundColor Gray
+                
+                if ($subSyncMode -eq "tracked") {
+                    git -C $subRepo bundle create $subBundle HEAD last-sync
+                } else {
+                    git -C $subRepo bundle create $subBundle HEAD
+                }
+            } else {
+                # 如果无法获取分支信息，使用默认策略
+                git -C $subRepo bundle create $subBundle HEAD last-sync
+            }
         }
     } else {
         Write-Host "    WARNING: Submodule path not found: $subRepo" -ForegroundColor Yellow
@@ -193,15 +223,35 @@ if ($CreateDiff) {
     $diffReport = Join-Path $LocalBundlesDir "$bundlePrefix`_$($globalConfig.bundle.main_repo_name)_diff_report.txt"
     
     # Main repo diff
-    $mainDiff = git -C $RepoDir diff last-sync..HEAD --stat
-    "=== Main repo diff (last-sync..HEAD) ===" | Out-File $diffReport -Encoding UTF8
+    $currentBranch = git -C $RepoDir branch --show-current
+    $syncMode = Get-BranchSyncMode -BranchName $currentBranch -SyncStrategy $syncStrategy
+    
+    if ($syncMode -eq "tracked") {
+        $mainDiff = git -C $RepoDir diff last-sync..HEAD --stat
+        "=== Main repo diff (last-sync..HEAD) ===" | Out-File $diffReport -Encoding UTF8
+    } else {
+        $mainDiff = git -C $RepoDir diff HEAD~10..HEAD --stat  # 最近10个提交
+        "=== Main repo diff (recent changes) ===" | Out-File $diffReport -Encoding UTF8
+    }
     $mainDiff | Out-File $diffReport -Append -Encoding UTF8
     
     # Submodule diffs
     foreach ($path in $subPaths) {
         $subRepo = Join-Path $RepoDir $path
         if (Test-Path $subRepo) {
-            $subDiff = git -C $subRepo diff last-sync..HEAD --stat
+            $subCurrentBranch = git -C $subRepo branch --show-current 2>$null
+            if ($subCurrentBranch) {
+                $subSyncMode = Get-BranchSyncMode -BranchName $subCurrentBranch -SyncStrategy $syncStrategy
+                
+                if ($subSyncMode -eq "tracked") {
+                    $subDiff = git -C $subRepo diff last-sync..HEAD --stat
+                } else {
+                    $subDiff = git -C $subRepo diff HEAD~5..HEAD --stat  # 最近5个提交
+                }
+            } else {
+                $subDiff = git -C $subRepo diff last-sync..HEAD --stat
+            }
+            
             if ($subDiff) {
                 ""
                 "=== Submodule $path diff ===" | Out-File $diffReport -Append -Encoding UTF8

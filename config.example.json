@@ -64,10 +64,17 @@
   "global": {
     "description": "Global configuration (shared by all environments)",
     "bundle": {
-      "include_all_branches": false,
+      "include_all_branches": true,
       "timestamp_format": "yyyyMMdd_HHmmss",
       "local_prefix": "local_",
-      "main_repo_name": "slam-core"
+      "main_repo_name": "slam-core",
+      "sync_strategy": {
+        "description": "Sync strategy configuration for different branches",
+        "tracked_branches": ["main", "develop"],
+        "untracked_branches": ["feature/*", "hotfix/*"],
+        "sync_mode": "selective",
+        "default_behavior": "latest"
+      }
     },
     "workflow": {
       "auto_create_local_bundle": false,

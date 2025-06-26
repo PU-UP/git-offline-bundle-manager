@@ -357,6 +357,69 @@ git commit -m "我的修改"
 - 支持环境变量覆盖
 - 改进平台检测逻辑
 
+## 配置说明
+
+### 基本配置
+
+复制 `config.example.json` 为 `config.json` 并根据你的环境进行配置：
+
+```json
+{
+  "environments": {
+    "offline_windows": {
+      "paths": {
+        "repo_dir": "你的仓库路径",
+        "bundles_dir": "bundle文件目录",
+        "local_bundles_dir": "本地bundle输出目录",
+        "backup_dir": "备份目录"
+      },
+      "git": {
+        "user_name": "你的Git用户名",
+        "user_email": "你的Git邮箱"
+      }
+    }
+  }
+}
+```
+
+### 分支同步策略配置
+
+新增的分支同步策略允许对不同分支使用不同的同步方式：
+
+```json
+{
+  "global": {
+    "bundle": {
+      "sync_strategy": {
+        "tracked_branches": ["main", "develop"],
+        "untracked_branches": ["feature/*", "hotfix/*"],
+        "sync_mode": "selective",
+        "default_behavior": "latest"
+      }
+    }
+  }
+}
+```
+
+#### 配置说明：
+
+- **`tracked_branches`**: 使用 `last-sync` 标签进行增量同步的分支
+- **`untracked_branches`**: 直接更新到最新状态的分支（支持通配符）
+- **`sync_mode`**: 同步模式（`selective` 或 `full`）
+- **`default_behavior`**: 未明确配置分支的默认行为（`latest` 或 `tracked`）
+
+#### 同步策略示例：
+
+| 分支类型 | 同步方式 | 说明 |
+|---------|---------|------|
+| `main`, `develop` | 增量同步 | 使用 `last-sync` 标签，只传输变更 |
+| `feature/*`, `hotfix/*` | 全量同步 | 直接更新到最新状态 |
+| 其他分支 | 根据 `default_behavior` | 默认为 `latest` |
+
+### 环境变量覆盖
+
+支持通过环境变量覆盖配置：
+
 ---
 
 **Git离线开发工具套件** - 让离线开发更简单、更安全、更高效！ 
