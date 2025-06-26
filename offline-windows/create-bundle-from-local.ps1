@@ -59,14 +59,14 @@ $timestamp = Get-Date -Format $globalConfig.bundle.timestamp_format
 $bundlePrefix = "$($globalConfig.bundle.local_prefix)$timestamp"
 
 # 2.1) Get submodule paths (used in multiple places)
-$subPaths = git -C $RepoDir submodule status --recursive |
+$subPaths = @(git -C $RepoDir submodule status --recursive |
             ForEach-Object { 
                 $line = $_.Trim()
                 if ($line -match '^\s*([a-f0-9]+)\s+(.+?)\s+\((.+)\)$') {
                     $matches[2]  # 返回路径部分
                 }
             } |
-            Where-Object { $_ -ne $null }
+            Where-Object { $_ -ne $null })
 
 # 2.5) Check for existing bundles and ask for confirmation to delete
 Write-Host "Checking for existing bundles..." -ForegroundColor Yellow
@@ -102,10 +102,13 @@ if ($CreateDiff) {
 
 # Also check for any existing bundle files with the same prefix pattern (for testing purposes)
 # This allows testing the confirmation logic even with different timestamps
-$allExistingBundles = Get-ChildItem $LocalBundlesDir -File | Where-Object { 
-    $_.Name -match "^$($globalConfig.bundle.local_prefix).*\.bundle$" -or 
-    $_.Name -match "^$($globalConfig.bundle.local_prefix).*\.json$" -or
-    $_.Name -match "^$($globalConfig.bundle.local_prefix).*_diff_report\.txt$"
+$allExistingBundles = @()
+if (Test-Path $LocalBundlesDir) {
+    $allExistingBundles = @(Get-ChildItem $LocalBundlesDir -File | Where-Object { 
+        $_.Name -match "^$($globalConfig.bundle.local_prefix).*\.bundle$" -or 
+        $_.Name -match "^$($globalConfig.bundle.local_prefix).*\.json$" -or
+        $_.Name -match "^$($globalConfig.bundle.local_prefix).*_diff_report\.txt$"
+    })
 }
 
 # Ask for confirmation if existing bundles found

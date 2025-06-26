@@ -27,6 +27,74 @@ function Confirm-Continue {
     return $response -eq 'y' -or $response -eq 'Y'
 }
 
+function Create-Backup {
+    param([string]$RepoDir, [string]$BackupDir)
+    
+    $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
+    $repoName = Split-Path $RepoDir -Leaf
+    $backupName = "${repoName}-backup-$timestamp"
+    $backupPath = Join-Path $BackupDir $backupName
+    
+    if (-not (Test-Path $BackupDir)) {
+        New-Item -ItemType Directory -Path $BackupDir -Force | Out-Null
+    }
+    
+    Write-Host "Creating backup: $backupPath" -ForegroundColor Cyan
+    Copy-Item -Path $RepoDir -Destination $backupPath -Recurse -Force
+    
+    return $backupPath
+}
+
+function Update-FromBundle {
+    param([string]$RepoDir, [string]$BundlesDir)
+    
+    # Update main repo
+    $mainBundle = Join-Path $BundlesDir "slam-core.bundle"
+    if (Test-Path $mainBundle) {
+        Write-Host "Updating main repo from bundle..." -ForegroundColor Cyan
+        git -C $RepoDir fetch $mainBundle "refs/heads/*:refs/heads/*" --update-head-ok
+    } else {
+        throw "ERROR: Main bundle not found: $mainBundle"
+    }
+    
+    # Update submodules
+    $subStatus = git -C $RepoDir submodule status --recursive
+    $subPaths = $subStatus | ForEach-Object { 
+        if ($_ -match '^\s*[+-]?\w+\s+(\S+)\s+') { $matches[1] }
+    }
+    
+    foreach ($path in $subPaths) {
+        $bundleName = $path -replace '/', '_'
+        $subBundle = Join-Path $BundlesDir "$bundleName.bundle"
+        
+        if (Test-Path $subBundle) {
+            Write-Host "  Updating submodule: $path" -ForegroundColor Cyan
+            $subDir = Join-Path $RepoDir $path
+            git -C $subDir fetch $subBundle "refs/heads/*:refs/heads/*" --update-head-ok
+        } else {
+            Write-Host "WARNING: Submodule bundle not found: $subBundle" -ForegroundColor Yellow
+        }
+    }
+    
+    # Update last-sync tags
+    Write-Host "Updating sync tags..." -ForegroundColor Cyan
+    git -C $RepoDir tag -f last-sync
+    git -C $RepoDir submodule foreach --recursive 'git tag -f last-sync'
+}
+
+function Auto-MergeChanges {
+    param([string]$RepoDir)
+    
+    Write-Host "Using auto-merge mode..." -ForegroundColor Cyan
+    # Simple auto-merge: stash and pop
+    git -C $RepoDir stash push -m "Auto-stash before merge"
+    $stashResult = git -C $RepoDir stash pop 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "WARNING: Auto-merge failed, manual resolution needed" -ForegroundColor Yellow
+        Write-Host $stashResult
+    }
+}
+
 # Read config
 try {
     $config = Read-Config
@@ -97,8 +165,13 @@ if (-not $SkipBackup) {
     Write-Step "Creating backup" "Yellow"
     
     if (Confirm-Continue "Create backup before update?") {
-        & "$PSScriptRoot\Backup-BeforeUpdate.ps1"
-        Write-Host "SUCCESS: Backup completed" -ForegroundColor Green
+        try {
+            $backupPath = Create-Backup -RepoDir $RepoDir -BackupDir $BackupDir
+            Write-Host "SUCCESS: Backup completed: $backupPath" -ForegroundColor Green
+        } catch {
+            Write-Host "ERROR: Backup failed: $($_.Exception.Message)" -ForegroundColor Red
+            exit 1
+        }
     }
 }
 
@@ -107,11 +180,10 @@ if ($hasChanges) {
     Write-Step "Handling local changes" "Yellow"
     
     if ($AutoResolve) {
-        Write-Host "Using auto-merge mode..." -ForegroundColor Cyan
-        & "$PSScriptRoot\Merge-LocalChanges.ps1"
+        Auto-MergeChanges -RepoDir $RepoDir
     } else {
         Write-Host "Starting interactive merge..." -ForegroundColor Cyan
-        & "$PSScriptRoot\Interactive-Merge.ps1"
+        & "$PSScriptRoot\interactive-merge.ps1"
     }
 }
 
@@ -119,7 +191,7 @@ if ($hasChanges) {
 Write-Step "Updating to latest bundle" "Green"
 
 try {
-    & "$PSScriptRoot\Update-OfflineRepo.ps1"
+    Update-FromBundle -RepoDir $RepoDir -BundlesDir $BundlesDir
     Write-Host "SUCCESS: Update completed" -ForegroundColor Green
 } catch {
     Write-Host "ERROR: Update failed: $($_.Exception.Message)" -ForegroundColor Red
@@ -132,7 +204,7 @@ if ($CreateLocalBundle) {
     
     if (Confirm-Continue "Create local bundle for sync?") {
         try {
-            & "$PSScriptRoot\Create-Bundle-From-Local.ps1"
+            & "$PSScriptRoot\create-bundle-from-local.ps1"
             Write-Host "SUCCESS: Local bundle creation completed" -ForegroundColor Green
             Write-Host "Output directory: $LocalBundlesDir" -ForegroundColor Cyan
         } catch {
