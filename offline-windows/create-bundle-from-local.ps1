@@ -72,7 +72,13 @@ if ($IncludeAll) {
 # 4) Create submodule bundles
 Write-Host "Creating submodule bundles..." -ForegroundColor Green
 $subPaths = git -C $RepoDir submodule status --recursive |
-            ForEach-Object { ($_ -split '\s+')[1] }
+            ForEach-Object { 
+                $line = $_.Trim()
+                if ($line -match '^\s*([a-f0-9]+)\s+(.+?)\s+\((.+)\)$') {
+                    $matches[2]  # 返回路径部分
+                }
+            } |
+            Where-Object { $_ -ne $null }
 
 foreach ($path in $subPaths) {
     $bundleName = ($path -replace '/', '_')
@@ -81,17 +87,21 @@ foreach ($path in $subPaths) {
     
     Write-Host "  Creating submodule bundle: $path" -ForegroundColor White
     
-    if ($IncludeAll) {
-        git -C $subRepo bundle create $subBundle --all
+    if (Test-Path $subRepo) {
+        if ($IncludeAll) {
+            git -C $subRepo bundle create $subBundle --all
+        } else {
+            git -C $subRepo bundle create $subBundle HEAD last-sync
+        }
     } else {
-        git -C $subRepo bundle create $subBundle HEAD last-sync
+        Write-Host "    WARNING: Submodule path not found: $subRepo" -ForegroundColor Yellow
     }
 }
 
 # 5) Create diff report
 if ($CreateDiff) {
     Write-Host "Creating diff report..." -ForegroundColor Green
-    $diffReport = Join-Path $LocalBundlesDir "$bundlePrefix`_diff_report.txt"
+    $diffReport = Join-Path $LocalBundlesDir "$bundlePrefix`_$($globalConfig.bundle.main_repo_name)_diff_report.txt"
     
     # Main repo diff
     $mainDiff = git -C $RepoDir diff last-sync..HEAD --stat
@@ -101,11 +111,13 @@ if ($CreateDiff) {
     # Submodule diffs
     foreach ($path in $subPaths) {
         $subRepo = Join-Path $RepoDir $path
-        $subDiff = git -C $subRepo diff last-sync..HEAD --stat
-        if ($subDiff) {
-            ""
-            "=== Submodule $path diff ===" | Out-File $diffReport -Append -Encoding UTF8
-            $subDiff | Out-File $diffReport -Append -Encoding UTF8
+        if (Test-Path $subRepo) {
+            $subDiff = git -C $subRepo diff last-sync..HEAD --stat
+            if ($subDiff) {
+                ""
+                "=== Submodule $path diff ===" | Out-File $diffReport -Append -Encoding UTF8
+                $subDiff | Out-File $diffReport -Append -Encoding UTF8
+            }
         }
     }
 }
@@ -142,7 +154,7 @@ Write-Host "Main repo bundle: $bundlePrefix`_slam-core.bundle" -ForegroundColor 
 Write-Host "Submodule bundle count: $($subPaths.Count)" -ForegroundColor Cyan
 
 if ($CreateDiff) {
-    Write-Host "Diff report: $bundlePrefix`_diff_report.txt" -ForegroundColor Cyan
+    Write-Host "Diff report: $bundlePrefix`_$($globalConfig.bundle.main_repo_name)_diff_report.txt" -ForegroundColor Cyan
 }
 
 Write-Host ""

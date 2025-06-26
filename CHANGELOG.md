@@ -1,5 +1,90 @@
 # Git Offline Bundle Manager - 变更日志
 
+## 版本 2.6.0 - Diff Report 命名优化 (2025-01-01)
+
+### 主要改进
+
+#### 1. Diff Report 文件命名优化
+- **包含仓库名称**：diff report 文件名现在包含主仓库名称，提高可读性
+- **命名格式改进**：从 `{bundle_prefix}_diff_report.txt` 改为 `{bundle_prefix}_{repo_name}_diff_report.txt`
+- **示例**：`local_20250101_120000_diff_report.txt` → `local_20250101_120000_slam-core_diff_report.txt`
+
+#### 2. 跨平台一致性
+- **Windows PowerShell**：更新 `create-bundle-from-local.ps1` 使用新的命名格式
+- **Ubuntu Bash**：更新 `create-bundle-from-local.sh` 使用新的命名格式
+- **导入脚本**：更新 `gitlab-server/import_local_bundles.sh` 适配新的文件名
+
+#### 3. 变量定义修复
+- **Ubuntu 脚本**：修复 `offline-ubuntu/create-bundle-from-local.sh` 中 `MAIN_REPO_NAME` 变量未定义的问题
+- **GitLab 脚本**：修复 `gitlab-server/import_local_bundles.sh` 中 `MAIN_REPO_NAME` 变量未定义的问题
+- **配置读取**：从 `config.json` 中正确读取 `main_repo_name` 配置项
+
+### 技术实现
+
+#### 命名格式变更
+```bash
+# 旧格式
+local_20250101_120000_diff_report.txt
+
+# 新格式  
+local_20250101_120000_slam-core_diff_report.txt
+```
+
+#### 配置文件支持
+- 使用 `config.json` 中的 `global.bundle.main_repo_name` 配置项
+- 默认值：`slam-core`
+- 支持环境变量覆盖
+
+#### 向后兼容性
+- 导入脚本会尝试查找新格式的文件名
+- 如果新格式文件不存在，会回退到旧格式（如果存在）
+- 不影响现有的 bundle 文件功能
+
+### 用户体验改进
+
+#### 文件识别更清晰
+- **多项目支持**：当处理多个不同项目时，diff report 文件名能清楚标识属于哪个项目
+- **减少混淆**：避免不同项目的 diff report 文件重名
+- **更好的组织**：文件名包含更多有用信息
+
+#### 调试和故障排除
+- **更容易定位**：通过文件名就能知道 diff report 属于哪个仓库
+- **批量处理**：支持按项目名称过滤和处理 diff report 文件
+- **日志分析**：文件名包含的信息有助于日志分析和问题追踪
+
+### 文件变化
+
+#### 更新的文件
+- `offline-windows/create-bundle-from-local.ps1` - 更新 diff report 命名格式
+- `offline-ubuntu/create-bundle-from-local.sh` - 更新 diff report 命名格式，添加 MAIN_REPO_NAME 变量定义
+- `gitlab-server/import_local_bundles.sh` - 更新 diff report 文件查找逻辑，添加 MAIN_REPO_NAME 变量定义
+- `README.md` - 添加版本 2.6.0 变更说明
+
+### 使用示例
+
+#### 生成的文件
+```bash
+# 创建 bundle 后生成的文件
+local_20250101_120000_slam-core.bundle
+local_20250101_120000_slam-core_diff_report.txt
+local_20250101_120000_info.json
+local_20250101_120000_submodule1.bundle
+local_20250101_120000_submodule2.bundle
+```
+
+#### 导入时的显示
+```bash
+# 导入时会显示包含仓库名称的 diff report
+>>> Diff report:
+=== Main repo diff (last-sync..HEAD) ===
+ src/main.cpp | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+=== Submodule submodule1 diff ===
+ include/header.h | 2 ++
+ 1 file changed, 2 insertions(+)
+```
+
 ## 版本 2.5.0 - 新增跨平台配置测试脚本 (2025-01-01)
 
 ### 主要改进

@@ -24,15 +24,18 @@ if [[ -f "$CONFIG_FILE" ]]; then
         
         ROOT=$(jq -r ".environments.$PLATFORM.paths.repo_dir // empty" "$CONFIG_FILE" 2>/dev/null || echo "$DEFAULT_ROOT")
         DEFAULT_LOCAL_BUNDLES_DIR=$(jq -r ".environments.$PLATFORM.paths.local_bundles_dir // empty" "$CONFIG_FILE" 2>/dev/null || echo "$DEFAULT_LOCAL_BUNDLES_DIR")
+        MAIN_REPO_NAME=$(jq -r '.global.bundle.main_repo_name // "slam-core"' "$CONFIG_FILE" 2>/dev/null)
     else
         echo ">>> jq not installed, using default config"
         ROOT="$DEFAULT_ROOT"
         DEFAULT_LOCAL_BUNDLES_DIR="$DEFAULT_LOCAL_BUNDLES_DIR"
+        MAIN_REPO_NAME="slam-core"
     fi
 else
     echo ">>> Config file not found, using default config"
     ROOT="$DEFAULT_ROOT"
     DEFAULT_LOCAL_BUNDLES_DIR="$DEFAULT_LOCAL_BUNDLES_DIR"
+    MAIN_REPO_NAME="slam-core"
 fi
 
 # Environment variable overrides
@@ -160,7 +163,7 @@ echo ">>> Submodule status:"
 git submodule status --recursive
 
 # 5. Optional: Show diff report
-DIFF_REPORT="$LOCAL_BUNDLES_DIR/${BUNDLE_PREFIX}_diff_report.txt"
+DIFF_REPORT="$LOCAL_BUNDLES_DIR/${BUNDLE_PREFIX}_${MAIN_REPO_NAME}_diff_report.txt"
 if [[ -f "$DIFF_REPORT" ]]; then
     echo ">>> Diff report:"
     cat "$DIFF_REPORT"

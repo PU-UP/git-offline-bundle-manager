@@ -32,6 +32,7 @@ if [[ -f "$CONFIG_FILE" ]]; then
         CREATE_DIFF=$(jq -r ".environments.$PLATFORM.sync.create_diff_report // true" "$CONFIG_FILE" 2>/dev/null)
         TIMESTAMP_FORMAT=$(jq -r '.global.bundle.timestamp_format // "yyyyMMdd_HHmmss"' "$CONFIG_FILE" 2>/dev/null)
         LOCAL_PREFIX=$(jq -r '.global.bundle.local_prefix // "local_"' "$CONFIG_FILE" 2>/dev/null)
+        MAIN_REPO_NAME=$(jq -r '.global.bundle.main_repo_name // "slam-core"' "$CONFIG_FILE" 2>/dev/null)
     else
         echo ">>> jq not installed, using default config"
         ROOT="$DEFAULT_ROOT"
@@ -40,6 +41,7 @@ if [[ -f "$CONFIG_FILE" ]]; then
         CREATE_DIFF=true
         TIMESTAMP_FORMAT="yyyyMMdd_HHmmss"
         LOCAL_PREFIX="local_"
+        MAIN_REPO_NAME="slam-core"
     fi
 else
     echo ">>> Config file not found, using default config"
@@ -49,6 +51,7 @@ else
     CREATE_DIFF=true
     TIMESTAMP_FORMAT="yyyyMMdd_HHmmss"
     LOCAL_PREFIX="local_"
+    MAIN_REPO_NAME="slam-core"
 fi
 
 # Environment variable overrides
@@ -93,7 +96,7 @@ fi
 
 # 4) Create submodule bundles
 echo ">>> Creating submodule bundles..."
-sub_paths=$(git submodule status --recursive | awk '{print $2}')
+sub_paths=$(git submodule status --recursive | sed -n 's/^[[:space:]]*[a-f0-9]*[[:space:]]\+\([^[:space:]]\+\)[[:space:]]\+([^)]*)$/\1/p')
 
 for path in $sub_paths; do
     bundle_name=$(echo "$path" | tr '/' '_')
@@ -101,12 +104,17 @@ for path in $sub_paths; do
     sub_repo="$ROOT/$path"
     
     echo "  Creating submodule bundle: $path"
-    cd "$sub_repo"
     
-    if [[ "$INCLUDE_ALL" == "true" ]]; then
-        git bundle create "$sub_bundle" --all
+    if [[ -d "$sub_repo" ]]; then
+        cd "$sub_repo"
+        
+        if [[ "$INCLUDE_ALL" == "true" ]]; then
+            git bundle create "$sub_bundle" --all
+        else
+            git bundle create "$sub_bundle" HEAD last-sync
+        fi
     else
-        git bundle create "$sub_bundle" HEAD last-sync
+        echo "    WARNING: Submodule path not found: $sub_repo"
     fi
 done
 
@@ -115,7 +123,7 @@ cd "$ROOT"
 # 5) Create diff report
 if [[ "$CREATE_DIFF" == "true" ]]; then
     echo ">>> Creating diff report..."
-    diff_report="$OUTPUT_DIR/${bundle_prefix}_diff_report.txt"
+    diff_report="$OUTPUT_DIR/${bundle_prefix}_${MAIN_REPO_NAME}_diff_report.txt"
     
     # Main repo diff
     main_diff=$(git diff last-sync..HEAD --stat)
@@ -125,11 +133,13 @@ if [[ "$CREATE_DIFF" == "true" ]]; then
     # Submodule diffs
     for path in $sub_paths; do
         sub_repo="$ROOT/$path"
-        sub_diff=$(cd "$sub_repo" && git diff last-sync..HEAD --stat)
-        if [[ -n "$sub_diff" ]]; then
-            echo "" >> "$diff_report"
-            echo "=== Submodule $path diff ===" >> "$diff_report"
-            echo "$sub_diff" >> "$diff_report"
+        if [[ -d "$sub_repo" ]]; then
+            sub_diff=$(cd "$sub_repo" && git diff last-sync..HEAD --stat)
+            if [[ -n "$sub_diff" ]]; then
+                echo "" >> "$diff_report"
+                echo "=== Submodule $path diff ===" >> "$diff_report"
+                echo "$sub_diff" >> "$diff_report"
+            fi
         fi
     done
 fi
@@ -178,7 +188,7 @@ echo "Main repo bundle: ${bundle_prefix}_${MAIN_REPO_NAME}.bundle"
 echo "Submodule bundle count: $(echo "$sub_paths" | wc -w)"
 
 if [[ "$CREATE_DIFF" == "true" ]]; then
-    echo "Diff report: ${bundle_prefix}_diff_report.txt"
+    echo "Diff report: ${bundle_prefix}_${MAIN_REPO_NAME}_diff_report.txt"
 fi
 
 echo ""

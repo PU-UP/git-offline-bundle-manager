@@ -323,6 +323,12 @@ git commit -m "我的修改"
 
 ## 🔄 版本历史
 
+### v2.5.0 - Diff Report 命名优化
+- 改进 diff report 文件命名：包含仓库名称，提高可读性
+- 修复 Ubuntu 脚本中 MAIN_REPO_NAME 变量未定义的问题
+- 统一 Windows 和 Ubuntu 平台的 diff report 命名格式
+- 确保导入脚本能正确找到新的 diff report 文件
+
 ### v2.4.0 - 脚本优化和冗余删除
 - 减少脚本数量：从14个脚本减少到8个脚本，减少43%
 - 自动同步工作流整合：包含备份、更新、合并功能
