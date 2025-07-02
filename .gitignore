@@ -1,0 +1,98 @@
+# Git 离线包管理工具项目 .gitignore
+
+# 临时文件和缓存
+*.tmp
+*.temp
+*.cache
+*.log
+*.pid
+*.swp
+*.swo
+*~
+
+# 系统文件
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# 编辑器配置文件
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+.vim/
+
+# 备份文件
+*.bak
+*.backup
+*.old
+*.orig
+
+# 运行时生成的文件
+*.bundle
+*.tar.gz
+*.zip
+*.7z
+
+# 日志文件
+logs/
+*.log
+*.out
+*.err
+
+# 临时目录
+tmp/
+temp/
+.tmp/
+.temp/
+
+# 用户特定的配置文件（保留示例文件）
+local.config
+server.config
+!example-*.config
+
+# 测试输出
+test_output/
+*.test.log
+*.test.out
+
+# 环境变量文件
+.env
+.env.local
+.env.production
+
+# 锁文件
+*.lock
+
+# 编译输出（如果有的话）
+build/
+dist/
+target/
+
+# 依赖目录（如果有的话）
+node_modules/
+vendor/
+
+# 个人笔记和草稿
+notes/
+drafts/
+TODO.md
+*.draft
+
+# 大型二进制文件
+*.bin
+*.dat
+*.data
+
+# 网络相关
+*.pcap
+*.cap
+
+# 其他
+*.pid
+*.seed
+*.pid.lock 
