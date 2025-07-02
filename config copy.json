@@ -3,10 +3,10 @@
     "gitlab_server": {
       "description": "GitLab server environment (Ubuntu machine with GitLab access)",
       "paths": {
-        "repo_dir": "/work/develop_gitlab/slam-core",
-        "bundles_dir": "/work/develop_gitlab/slam-core/bundles",
-        "local_bundles_dir": "./local-bundles",
-        "backup_dir": "/work/develop_gitlab/slam-core-backups"
+        "repo_dir": "/mnt/d/Projects/bundle_exchange/backup/slam-core",
+        "bundles_dir": "/mnt/d/Projects/bundle_exchange/server/bundles",
+        "local_bundles_dir": "/mnt/d/Projects/bundle_exchange/local/bundles",
+        "backup_dir": "/mnt/d/Projects/bundle_exchange/backup/slam-core"
       },
       "git": {
         "user_name": "Your Name",
@@ -41,14 +41,14 @@
     "offline_ubuntu": {
       "description": "Ubuntu offline development environment (Ubuntu machine without GitLab access)",
       "paths": {
-        "repo_dir": "/work/develop_gitlab/slam-core",
-        "bundles_dir": "/work/develop_gitlab/slam-core/bundles",
-        "local_bundles_dir": "./local-bundles",
-        "backup_dir": "/work/develop_gitlab/slam-core-backups"
+        "repo_dir": "/mnt/d/Projects/bundle_exchange/backup/slam-core",
+        "bundles_dir": "/mnt/d/Projects/bundle_exchange/server/bundles",
+        "local_bundles_dir": "/mnt/d/Projects/bundle_exchange/local/bundles",
+        "backup_dir": "/mnt/d/Projects/bundle_exchange/backup/slam-core"
       },
       "git": {
-        "user_name": "Your Name",
-        "user_email": "your.email@company.com"
+        "user_name": "Zhengnan Pu",
+        "user_email": "zhengnan.pu@positecgroup.com"
       },
       "sync": {
         "backup_before_update": true,

@@ -5,7 +5,7 @@ set -euo pipefail
 # Create bundle files from local changes for syncing back to GitLab server:
 # 1. Check local change status
 # 2. Create bundles containing local changes
-# 3. Generate diff report
+# 3. Generate change records
 # 4. Prepare sync files
 
 # Default config
@@ -30,8 +30,6 @@ if [[ -f "$CONFIG_FILE" ]]; then
         OUTPUT_DIR=$(jq -r ".environments.$PLATFORM.paths.local_bundles_dir // empty" "$CONFIG_FILE" 2>/dev/null || echo "$DEFAULT_OUTPUT")
         INCLUDE_ALL=$(jq -r '.global.bundle.include_all_branches // false' "$CONFIG_FILE" 2>/dev/null)
         CREATE_DIFF=$(jq -r ".environments.$PLATFORM.sync.create_diff_report // true" "$CONFIG_FILE" 2>/dev/null)
-        TIMESTAMP_FORMAT=$(jq -r '.global.bundle.timestamp_format // "yyyyMMdd_HHmmss"' "$CONFIG_FILE" 2>/dev/null)
-        LOCAL_PREFIX=$(jq -r '.global.bundle.local_prefix // "local_"' "$CONFIG_FILE" 2>/dev/null)
         MAIN_REPO_NAME=$(jq -r '.global.bundle.main_repo_name // "slam-core"' "$CONFIG_FILE" 2>/dev/null)
     else
         echo ">>> jq not installed, using default config"
@@ -39,8 +37,6 @@ if [[ -f "$CONFIG_FILE" ]]; then
         OUTPUT_DIR="$DEFAULT_OUTPUT"
         INCLUDE_ALL=false
         CREATE_DIFF=true
-        TIMESTAMP_FORMAT="yyyyMMdd_HHmmss"
-        LOCAL_PREFIX="local_"
         MAIN_REPO_NAME="slam-core"
     fi
 else
@@ -49,8 +45,6 @@ else
     OUTPUT_DIR="$DEFAULT_OUTPUT"
     INCLUDE_ALL=false
     CREATE_DIFF=true
-    TIMESTAMP_FORMAT="yyyyMMdd_HHmmss"
-    LOCAL_PREFIX="local_"
     MAIN_REPO_NAME="slam-core"
 fi
 
@@ -78,9 +72,8 @@ if [[ ! -d "$OUTPUT_DIR" ]]; then
     mkdir -p "$OUTPUT_DIR"
 fi
 
-# 2) Get current timestamp
-timestamp=$(date +"$TIMESTAMP_FORMAT")
-bundle_prefix="${LOCAL_PREFIX}${timestamp}"
+# 2) Get current timestamp for change records
+timestamp=$(date '+%Y-%m-%d %H:%M:%S')
 
 # 2.1) Get submodule paths (used in multiple places)
 cd "$ROOT"
@@ -103,28 +96,28 @@ echo ">>> Checking for existing bundles..."
 existing_bundles=()
 
 # Check main repo bundle
-main_bundle="$OUTPUT_DIR/${bundle_prefix}_${MAIN_REPO_NAME}.bundle"
+main_bundle="$OUTPUT_DIR/${MAIN_REPO_NAME}.bundle"
 if [[ -f "$main_bundle" ]]; then
     existing_bundles+=("$main_bundle")
 fi
 
 # Check submodule bundles
 for path in $sub_paths; do
-    bundle_name=$(echo "$path" | tr '/' '_')
-    sub_bundle="$OUTPUT_DIR/${bundle_prefix}_${bundle_name}.bundle"
+    bundle_name=$(echo "$path" | tr '/' '_').bundle
+    sub_bundle="$OUTPUT_DIR/$bundle_name"
     if [[ -f "$sub_bundle" ]]; then
         existing_bundles+=("$sub_bundle")
     fi
 done
 
 # Check for info and diff report files
-info_file="$OUTPUT_DIR/${bundle_prefix}_info.json"
+info_file="$OUTPUT_DIR/local_info.json"
 if [[ -f "$info_file" ]]; then
     existing_bundles+=("$info_file")
 fi
 
 if [[ "$CREATE_DIFF" == "true" ]]; then
-    diff_report="$OUTPUT_DIR/${bundle_prefix}_${MAIN_REPO_NAME}_diff_report.txt"
+    diff_report="$OUTPUT_DIR/${MAIN_REPO_NAME}_diff_report.txt"
     if [[ -f "$diff_report" ]]; then
         existing_bundles+=("$diff_report")
     fi
@@ -132,7 +125,7 @@ fi
 
 # Ask for confirmation if existing bundles found
 if [[ ${#existing_bundles[@]} -gt 0 ]]; then
-    echo ">>> Found existing bundle files with the same timestamp:"
+    echo ">>> Found existing bundle files:"
     for bundle in "${existing_bundles[@]}"; do
         echo "  - $bundle"
     done
@@ -160,14 +153,14 @@ if [[ ${#existing_bundles[@]} -gt 0 ]]; then
     done
     echo ""
 else
-    # Check for any existing bundle files with the same prefix pattern
+    # Check for any existing bundle files
     all_existing_bundles=()
     if [[ -d "$OUTPUT_DIR" ]]; then
         while IFS= read -r -d '' file; do
             filename=$(basename "$file")
-            if [[ "$filename" =~ ^${LOCAL_PREFIX}.*\.bundle$ ]] || \
-               [[ "$filename" =~ ^${LOCAL_PREFIX}.*\.json$ ]] || \
-               [[ "$filename" =~ ^${LOCAL_PREFIX}.*_diff_report\.txt$ ]]; then
+            if [[ "$filename" =~ \.bundle$ ]] || \
+               [[ "$filename" =~ \.json$ ]] || \
+               [[ "$filename" =~ _diff_report\.txt$ ]]; then
                 all_existing_bundles+=("$file")
             fi
         done < <(find "$OUTPUT_DIR" -maxdepth 1 -type f -print0 2>/dev/null)
@@ -206,7 +199,7 @@ fi
 
 # 3) Create main repo bundle
 echo ">>> Creating main repo bundle..."
-main_bundle="$OUTPUT_DIR/${bundle_prefix}_${MAIN_REPO_NAME}.bundle"
+main_bundle="$OUTPUT_DIR/${MAIN_REPO_NAME}.bundle"
 
 cd "$ROOT"
 if [[ "$INCLUDE_ALL" == "true" ]]; then
@@ -219,8 +212,8 @@ fi
 # 4) Create submodule bundles
 echo ">>> Creating submodule bundles..."
 for path in $sub_paths; do
-    bundle_name=$(echo "$path" | tr '/' '_')
-    sub_bundle="$OUTPUT_DIR/${bundle_prefix}_${bundle_name}.bundle"
+    bundle_name=$(echo "$path" | tr '/' '_').bundle
+    sub_bundle="$OUTPUT_DIR/$bundle_name"
     sub_repo="$ROOT/$path"
     
     echo "  Creating submodule bundle: $path"
@@ -243,7 +236,7 @@ cd "$ROOT"
 # 5) Create diff report
 if [[ "$CREATE_DIFF" == "true" ]]; then
     echo ">>> Creating diff report..."
-    diff_report="$OUTPUT_DIR/${bundle_prefix}_${MAIN_REPO_NAME}_diff_report.txt"
+    diff_report="$OUTPUT_DIR/${MAIN_REPO_NAME}_diff_report.txt"
     
     # Main repo diff
     main_diff=$(git diff last-sync..HEAD --stat)
@@ -264,25 +257,80 @@ if [[ "$CREATE_DIFF" == "true" ]]; then
     done
 fi
 
-# 6) Create sync info file
+# 6) Create sync info file with change records
+# Prepare sub_bundles array
+sub_bundles_json=""
+if [[ -n "$sub_paths" ]]; then
+    sub_bundles_json="["
+    first=true
+    for path in $sub_paths; do
+        bundle_name=$(echo "$path" | tr '/' '_').bundle
+        if [[ "$first" == "true" ]]; then
+            first=false
+            sub_bundles_json="${sub_bundles_json}
+    \"$bundle_name\""
+        else
+            sub_bundles_json="${sub_bundles_json},
+    \"$bundle_name\""
+        fi
+    done
+    sub_bundles_json="${sub_bundles_json}
+  ]"
+else
+    sub_bundles_json="[]"
+fi
+
+# Prepare submodules change records
+submodules_json=""
+if [[ -n "$sub_paths" ]]; then
+    submodules_json="{"
+    first=true
+    for path in $sub_paths; do
+        sub_repo="$ROOT/$path"
+        if [[ -d "$sub_repo" ]]; then
+            sub_branch=$(cd "$sub_repo" && git branch --show-current 2>/dev/null || echo "unknown")
+            sub_commit_count=$(cd "$sub_repo" && git rev-list --count last-sync..HEAD 2>/dev/null || echo "0")
+            sub_files_changed=$(cd "$sub_repo" && git diff --name-only last-sync..HEAD 2>/dev/null | wc -l | tr -d ' ')
+            
+            if [[ "$first" == "true" ]]; then
+                first=false
+                submodules_json="${submodules_json}
+      \"$path\": {
+        \"branch\": \"$sub_branch\",
+        \"commit_count\": \"$sub_commit_count\",
+        \"files_changed\": \"$sub_files_changed\"
+      }"
+            else
+                submodules_json="${submodules_json},
+      \"$path\": {
+        \"branch\": \"$sub_branch\",
+        \"commit_count\": \"$sub_commit_count\",
+        \"files_changed\": \"$sub_files_changed\"
+      }"
+            fi
+        fi
+    done
+    submodules_json="${submodules_json}
+    }"
+else
+    submodules_json="{}"
+fi
+
 sync_info=$(cat << EOF
 {
   "timestamp": "$timestamp",
-  "bundle_prefix": "$bundle_prefix",
-  "main_bundle": "${bundle_prefix}_${MAIN_REPO_NAME}.bundle",
-  "sub_bundles": [
-$(first=true; for path in $sub_paths; do
-    bundle_name=$(echo "$path" | tr '/' '_')
-    if [[ "$first" == "true" ]]; then
-        first=false
-        echo -n "    \"${bundle_prefix}_${bundle_name}.bundle\""
-    else
-        echo -n ",\n    \"${bundle_prefix}_${bundle_name}.bundle\""
-    fi
-done)
-  ],
-  "created_at": "$(date '+%Y-%m-%d %H:%M:%S')",
+  "main_bundle": "${MAIN_REPO_NAME}.bundle",
+  "sub_bundles": $sub_bundles_json,
+  "created_at": "$timestamp",
   "git_status": "$(git status --porcelain | tr '\n' ' ' | sed 's/"/\\"/g')",
+  "change_records": {
+    "main_repo": {
+      "branch": "$(git branch --show-current)",
+      "commit_count": "$(git rev-list --count last-sync..HEAD 2>/dev/null || echo '0')",
+      "files_changed": "$(git diff --name-only last-sync..HEAD 2>/dev/null | wc -l | tr -d ' ')"
+    },
+    "submodules": $submodules_json
+  },
   "config_used": {
     "repo_dir": "$ROOT",
     "output_dir": "$OUTPUT_DIR",
@@ -293,17 +341,36 @@ done)
 EOF
 )
 
-echo -e "$sync_info" > "$OUTPUT_DIR/${bundle_prefix}_info.json"
+echo -e "$sync_info" > "$OUTPUT_DIR/local_info.json"
 
 # 7) Show results
 echo ""
 echo "SUCCESS: Bundle creation completed!"
 echo "Output directory: $OUTPUT_DIR"
-echo "Main repo bundle: ${bundle_prefix}_${MAIN_REPO_NAME}.bundle"
+echo "Main repo bundle: ${MAIN_REPO_NAME}.bundle"
 echo "Submodule bundle count: $(echo "$sub_paths" | wc -w)"
 
 if [[ "$CREATE_DIFF" == "true" ]]; then
-    echo "Diff report: ${bundle_prefix}_${MAIN_REPO_NAME}_diff_report.txt"
+    echo "Diff report: ${MAIN_REPO_NAME}_diff_report.txt"
+fi
+
+echo ""
+echo "Change Summary:"
+if command -v jq &> /dev/null; then
+    echo "Main repo: $(jq -r '.change_records.main_repo.branch' "$OUTPUT_DIR/local_info.json") branch, $(jq -r '.change_records.main_repo.commit_count' "$OUTPUT_DIR/local_info.json") commits, $(jq -r '.change_records.main_repo.files_changed' "$OUTPUT_DIR/local_info.json") files changed"
+    
+    echo "Submodules:"
+    jq -r '.change_records.submodules | to_entries[] | "  \(.key): \(.value.branch) branch, \(.value.commit_count) commits, \(.value.files_changed) files changed"' "$OUTPUT_DIR/local_info.json"
+else
+    echo "Main repo: $(git branch --show-current) branch"
+    echo "Submodules:"
+    for path in $sub_paths; do
+        sub_repo="$ROOT/$path"
+        if [[ -d "$sub_repo" ]]; then
+            sub_branch=$(cd "$sub_repo" && git branch --show-current 2>/dev/null || echo "unknown")
+            echo "  $path: $sub_branch branch"
+        fi
+    done
 fi
 
 echo ""
