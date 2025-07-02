@@ -13,7 +13,7 @@ DEFAULT_ROOT="/work/develop_gitlab/slam-core"
 DEFAULT_BUNDLES_DIR="/work/develop_gitlab/slam-core/bundles"
 
 # Read config file (if exists)
-CONFIG_FILE="config.json"
+CONFIG_FILE="../config.json"
 if [[ -f "$CONFIG_FILE" ]]; then
     echo ">>> Reading config file: $CONFIG_FILE"
     # Use jq to parse config file (if available)
@@ -29,8 +29,8 @@ if [[ -f "$CONFIG_FILE" ]]; then
         ROOT=$(jq -r ".environments.$PLATFORM.paths.repo_dir // empty" "$CONFIG_FILE" 2>/dev/null || echo "$DEFAULT_ROOT")
         BUNDLES_DIR=$(jq -r ".environments.$PLATFORM.paths.bundles_dir // empty" "$CONFIG_FILE" 2>/dev/null || echo "$DEFAULT_BUNDLES_DIR")
         MAIN_REPO_NAME=$(jq -r '.global.bundle.main_repo_name // "slam-core"' "$CONFIG_FILE" 2>/dev/null)
-        GIT_USER_NAME=$(jq -r ".environments.$PLATFORM.git.user_name // 'Your Name'" "$CONFIG_FILE" 2>/dev/null)
-        GIT_USER_EMAIL=$(jq -r ".environments.$PLATFORM.git.user_email // 'your.email@company.com'" "$CONFIG_FILE" 2>/dev/null)
+        GIT_USER_NAME=$(jq -r ".environments.$PLATFORM.git.user_name // \"Your Name\"" "$CONFIG_FILE" 2>/dev/null)
+        GIT_USER_EMAIL=$(jq -r ".environments.$PLATFORM.git.user_email // \"your.email@company.com\"" "$CONFIG_FILE" 2>/dev/null)
     else
         echo ">>> jq not installed, using default config"
         ROOT="$DEFAULT_ROOT"

@@ -83,7 +83,20 @@ timestamp=$(date +"$TIMESTAMP_FORMAT")
 bundle_prefix="${LOCAL_PREFIX}${timestamp}"
 
 # 2.1) Get submodule paths (used in multiple places)
-sub_paths=$(git submodule status --recursive | sed -n 's/^[[:space:]]*[a-f0-9]*[[:space:]]\+\([^[:space:]]\+\)[[:space:]]\+([^)]*)$/\1/p')
+cd "$ROOT"
+sub_paths=$(git submodule status --recursive | sed -n 's/^[[:space:]]*[a-f0-9]*[[:space:]]\+\([^[:space:]]\+\)[[:space:]]\+.*$/\1/p')
+cd - > /dev/null
+
+# Debug: Print submodule paths
+echo ">>> Debug: Found submodule paths:"
+if [[ -n "$sub_paths" ]]; then
+    echo "$sub_paths" | while read -r path; do
+        echo "  - $path"
+    done
+else
+    echo "  No submodules found"
+fi
+echo ""
 
 # 2.5) Check for existing bundles and ask for confirmation to delete
 echo ">>> Checking for existing bundles..."
@@ -258,21 +271,15 @@ sync_info=$(cat << EOF
   "bundle_prefix": "$bundle_prefix",
   "main_bundle": "${bundle_prefix}_${MAIN_REPO_NAME}.bundle",
   "sub_bundles": [
-EOF
-)
-
-first=true
-for path in $sub_paths; do
+$(first=true; for path in $sub_paths; do
     bundle_name=$(echo "$path" | tr '/' '_')
     if [[ "$first" == "true" ]]; then
         first=false
+        echo -n "    \"${bundle_prefix}_${bundle_name}.bundle\""
     else
-        sync_info="$sync_info,"
+        echo -n ",\n    \"${bundle_prefix}_${bundle_name}.bundle\""
     fi
-    sync_info="$sync_info\n    \"${bundle_prefix}_${bundle_name}.bundle\""
-done
-
-sync_info="$sync_info
+done)
   ],
   "created_at": "$(date '+%Y-%m-%d %H:%M:%S')",
   "git_status": "$(git status --porcelain | tr '\n' ' ' | sed 's/"/\\"/g')",
@@ -284,6 +291,7 @@ sync_info="$sync_info
   }
 }
 EOF
+)
 
 echo -e "$sync_info" > "$OUTPUT_DIR/${bundle_prefix}_info.json"
 
@@ -301,4 +309,4 @@ fi
 echo ""
 echo "Next steps:"
 echo "1. Copy files from $OUTPUT_DIR to GitLab server"
-echo "2. Use import_local_bundles.sh on GitLab server to import changes" 
+echo "2. Use import_local_bundles.sh on GitLab server to import changes"
