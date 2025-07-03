@@ -54,6 +54,14 @@ else
     echo "Using configured modules: $MODULES"
 fi
 
+# Get base branch from config
+BASE_BRANCH="${CONFIG_BASE_BRANCH:-}"
+if [[ -n "$BASE_BRANCH" ]]; then
+    echo "Using configured base branch: $BASE_BRANCH"
+else
+    echo "No base branch specified in config, will use default (master/main)"
+fi
+
 # Validate bundle source directory
 if [[ ! -d "$BUNDLE_SOURCE" ]]; then
     echo "Error: Bundle source directory '$BUNDLE_SOURCE' does not exist" >&2
@@ -186,21 +194,55 @@ for module in "${MODULE_ARRAY[@]}"; do
     # Fetch all branches from bundle
     git -C "$module" fetch --all
     
-    # Checkout main branch (assuming it exists)
-    if git -C "$module" show-ref --verify --quiet refs/remotes/origin/main; then
-        git -C "$module" checkout -b main origin/main
-        echo "Successfully initialized submodule: $module (main branch)"
+    # Determine which branch to checkout
+    TARGET_BRANCH=""
+    
+    # First, try to use configured base branch
+    if [[ -n "$BASE_BRANCH" ]] && git -C "$module" show-ref --verify --quiet refs/remotes/origin/"$BASE_BRANCH"; then
+        TARGET_BRANCH="$BASE_BRANCH"
+        echo "Using configured base branch: $TARGET_BRANCH"
+    # Then try main branch
+    elif git -C "$module" show-ref --verify --quiet refs/remotes/origin/main; then
+        TARGET_BRANCH="main"
+        echo "Using main branch"
+    # Then try master branch
     elif git -C "$module" show-ref --verify --quiet refs/remotes/origin/master; then
-        git -C "$module" checkout -b master origin/master
-        echo "Successfully initialized submodule: $module (master branch)"
+        TARGET_BRANCH="master"
+        echo "Using master branch"
     else
         # Try to checkout the first available branch
         FIRST_BRANCH=$(git -C "$module" branch -r | head -n1 | sed 's/origin\///')
         if [[ -n "$FIRST_BRANCH" ]]; then
-            git -C "$module" checkout -b "$FIRST_BRANCH" "origin/$FIRST_BRANCH"
-            echo "Successfully initialized submodule: $module ($FIRST_BRANCH branch)"
+            TARGET_BRANCH="$FIRST_BRANCH"
+            echo "Using first available branch: $TARGET_BRANCH"
         else
             echo "Warning: No branches found in submodule bundle: $module"
+            continue
+        fi
+    fi
+    
+    # Get the commit that the main repository expects for this submodule
+    EXPECTED_COMMIT=$(git ls-tree HEAD "$module" | awk '{print $3}')
+    echo "Expected commit for $module: $EXPECTED_COMMIT"
+    
+    # Check if the expected commit exists in the repository
+    if git -C "$module" cat-file -e "$EXPECTED_COMMIT" 2>/dev/null; then
+        # Reset to the expected commit (this will put us in detached HEAD state)
+        git -C "$module" reset --hard "$EXPECTED_COMMIT"
+        echo "Successfully initialized submodule: $module (commit $EXPECTED_COMMIT)"
+        
+        # Show current branch and commit info
+        CURRENT_BRANCH=$(git -C "$module" branch --show-current)
+        echo "Current branch: $CURRENT_BRANCH (detached HEAD)"
+        echo "Current commit: $(git -C "$module" rev-parse --short HEAD)"
+    else
+        echo "Warning: Expected commit $EXPECTED_COMMIT not found in submodule bundle: $module"
+        echo "This might indicate a problem with the bundle file"
+        
+        # Fallback to branch checkout
+        if [[ -n "$TARGET_BRANCH" ]]; then
+            git -C "$module" checkout -b "$TARGET_BRANCH" "origin/$TARGET_BRANCH"
+            echo "Fallback: Switched to $TARGET_BRANCH branch"
         fi
     fi
 done

@@ -14,20 +14,28 @@ load_config() {
     fi
     
     # Read config file and export variables
+    local current_section=""
     while IFS='=' read -r key value; do
         # Skip comments and empty lines
         [[ $key =~ ^[[:space:]]*# ]] && continue
         [[ -z $key ]] && continue
         
-        # Skip INI section headers (lines starting with [)
-        [[ $key =~ ^[[:space:]]*\[ ]] && continue
+        # Handle INI section headers (lines starting with [)
+        if [[ $key =~ ^[[:space:]]*\[ ]]; then
+            current_section=$(echo "$key" | sed 's/^[[:space:]]*\[//;s/\][[:space:]]*$//')
+            continue
+        fi
         
         # Remove leading/trailing whitespace
         key=$(echo "$key" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
         value=$(echo "$value" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
         
-        # Export variable
-        export "CONFIG_${key^^}"="$value"
+        # Export variable (with section prefix if not in main section)
+        if [[ "$current_section" == "main" || -z "$current_section" ]]; then
+            export "CONFIG_${key^^}"="$value"
+        else
+            export "CONFIG_${current_section^^}_${key^^}"="$value"
+        fi
     done < "$config_file"
 }
 
