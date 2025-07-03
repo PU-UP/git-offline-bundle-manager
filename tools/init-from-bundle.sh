@@ -165,7 +165,9 @@ for module in "${MODULE_ARRAY[@]}"; do
     echo "Initializing submodule: $module"
     
     # Check if submodule bundle exists
-    MODULE_BUNDLE="$BUNDLE_SOURCE/${module}.bundle"
+    # Convert path separators to underscores for bundle filename
+    MODULE_BUNDLE_NAME=$(echo "$module" | sed 's|/|_|g')
+    MODULE_BUNDLE="$BUNDLE_SOURCE/${MODULE_BUNDLE_NAME}.bundle"
     if [[ ! -f "$MODULE_BUNDLE" ]]; then
         echo "Warning: Submodule bundle not found: $MODULE_BUNDLE"
         echo "Skipping submodule: $module"
@@ -182,7 +184,7 @@ for module in "${MODULE_ARRAY[@]}"; do
     git -C "$module" remote add origin "$MODULE_BUNDLE"
     
     # Fetch all branches from bundle
-    git -C "$module" fetch origin --all
+    git -C "$module" fetch --all
     
     # Checkout main branch (assuming it exists)
     if git -C "$module" show-ref --verify --quiet refs/remotes/origin/main; then
