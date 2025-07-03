@@ -14,18 +14,28 @@ CONFIG_FILE="${1:-$SCRIPT_DIR/server.config}"
 
 # Load and validate configuration
 if ! validate_config "$CONFIG_FILE" "repo_path"; then
-    echo "Usage: $0 <bundle_directory> [config_file]"
+    echo "Usage: $0 [config_file] [bundle_directory]"
     echo "Default config file: $SCRIPT_DIR/server.config"
     echo
+    echo "Example: $0 server.config /media/usb/feature-bundles"
     echo "Example: $0 /media/usb/feature-bundles"
     exit 1
 fi
 
-BUNDLE_DIR="${1:-}"
+load_config "$CONFIG_FILE"
+
+# Determine bundle directory
+BUNDLE_DIR="${2:-}"
 if [[ -z "$BUNDLE_DIR" ]]; then
-    echo "Error: Bundle directory not specified" >&2
-    echo "Usage: $0 <bundle_directory> [config_file]"
-    exit 1
+    # No bundle directory specified, try to use from config
+    if [[ -n "${CONFIG_IMPORT_DIR:-}" ]]; then
+        BUNDLE_DIR="$CONFIG_IMPORT_DIR"
+        echo "Using import directory from config: $BUNDLE_DIR"
+    else
+        echo "Error: Bundle directory not specified and no import_dir in config" >&2
+        echo "Usage: $0 [config_file] [bundle_directory]" >&2
+        exit 1
+    fi
 fi
 
 if [[ ! -d "$BUNDLE_DIR" ]]; then
@@ -33,12 +43,10 @@ if [[ ! -d "$BUNDLE_DIR" ]]; then
     exit 1
 fi
 
-load_config "$CONFIG_FILE"
-
 REPO_PATH="$CONFIG_REPO_PATH"
 
 # Auto-detect modules if not specified in config
-MODULES="$CONFIG_MODULES"
+MODULES="${CONFIG_MODULES:-}"
 if [[ -z "$MODULES" ]]; then
     echo "No modules specified in config, auto-detecting from .gitmodules..."
     MODULES=$(get_submodules "$CONFIG_FILE" "$REPO_PATH")
@@ -92,6 +100,84 @@ for bundle in "${FEATURE_BUNDLES[@]}"; do
 done
 echo
 
+# Import submodule feature bundles
+echo
+echo "Importing submodule feature bundles..."
+
+# 1. 获取所有真实子模块路径
+SUBMODULE_PATHS=$(git config --file .gitmodules --get-regexp path | awk '{print $2}')
+
+if [[ -z "$SUBMODULE_PATHS" ]]; then
+    echo "No submodules found in .gitmodules, skipping submodule bundle import."
+else
+    echo "Submodules found: $SUBMODULE_PATHS"
+    
+    # 先初始化/更新所有子模块
+    git submodule update --init --recursive
+    
+    # 2. 处理每个子模块，先导入子模块 bundle
+    for module in $SUBMODULE_PATHS; do
+        if [[ ! -d "$module" ]]; then
+            echo "Warning: Submodule directory '$module' not found, skipping..."
+            continue
+        fi
+        
+        # Find corresponding feature bundle
+        MODULE_FEATURE_BUNDLE=""
+        SAFE_MODULE_NAME=$(echo "$module" | sed 's/\//_/g')
+        for bundle in "${FEATURE_BUNDLES[@]}"; do
+            bundle_name=$(basename "$bundle" .bundle)
+            if [[ "$bundle_name" == "${SAFE_MODULE_NAME}-"* ]]; then
+                MODULE_FEATURE_BUNDLE="$bundle"
+                break
+            fi
+        done
+        
+        if [[ -n "$MODULE_FEATURE_BUNDLE" ]]; then
+            echo "Importing submodule feature bundle: $module -> $(basename "$MODULE_FEATURE_BUNDLE")"
+            
+            # Extract feature branch name from bundle filename
+            BUNDLE_NAME=$(basename "$MODULE_FEATURE_BUNDLE" .bundle)
+            FEATURE_BRANCH="${BUNDLE_NAME#${SAFE_MODULE_NAME}-}"
+            
+            if [[ "$FEATURE_BRANCH" == "$BUNDLE_NAME" ]]; then
+                echo "Error: Could not extract feature branch name from bundle filename" >&2
+                continue
+            fi
+            
+            # 只替换前三个下划线为斜杠
+            FEATURE_BRANCH=$(echo "$FEATURE_BRANCH" | sed 's/_/\//;s/_/\//;s/_/\//')
+            
+            echo "Feature branch: $FEATURE_BRANCH"
+            
+            # Check if submodule is initialized
+            if [[ -d "$module/.git" || -f "$module/.git" ]]; then
+                # Initialize or update submodule if needed
+                if [[ ! -d "$module/.git" && -f "$module/.git" ]]; then
+                    echo "Submodule '$module' .git为文件，尝试git submodule update..."
+                    if git submodule update "$module" 2>/dev/null; then
+                        echo "Successfully updated submodule: $module"
+                    else
+                        echo "Failed to update submodule: $module, skipping..."
+                        continue
+                    fi
+                fi
+                
+                # Fetch the feature branch from bundle
+                git -C "$module" fetch "$MODULE_FEATURE_BUNDLE" "$FEATURE_BRANCH:$FEATURE_BRANCH"
+                echo "Successfully imported submodule feature branch: $module/$FEATURE_BRANCH"
+            else
+                echo "Warning: Submodule '$module' is not initialized, skipping..."
+            fi
+        else
+            echo "Warning: No feature bundle found for submodule '$module'"
+        fi
+    done
+fi
+
+echo
+# === 先导入子模块后再导入主仓库 ===
+
 # Import main repository feature bundle
 MAIN_FEATURE_BUNDLE=""
 for bundle in "${FEATURE_BUNDLES[@]}"; do
@@ -114,6 +200,9 @@ if [[ -n "$MAIN_FEATURE_BUNDLE" ]]; then
         exit 1
     fi
     
+    # 只替换前三个下划线为斜杠
+    FEATURE_BRANCH=$(echo "$FEATURE_BRANCH" | sed 's/_/\//;s/_/\//;s/_/\//')
+    
     echo "Feature branch: $FEATURE_BRANCH"
     
     # Fetch the feature branch from bundle
@@ -122,58 +211,6 @@ if [[ -n "$MAIN_FEATURE_BUNDLE" ]]; then
 else
     echo "Warning: No main repository feature bundle found"
 fi
-
-# Import submodule feature bundles
-echo
-echo "Importing submodule feature bundles..."
-
-# Convert comma-separated modules to array
-IFS=',' read -ra MODULE_ARRAY <<< "$MODULES"
-
-for module in "${MODULE_ARRAY[@]}"; do
-    module=$(echo "$module" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
-    
-    if [[ ! -d "$module" ]]; then
-        echo "Warning: Submodule directory '$module' not found, skipping..."
-        continue
-    fi
-    
-    # Find corresponding feature bundle
-    MODULE_FEATURE_BUNDLE=""
-    for bundle in "${FEATURE_BUNDLES[@]}"; do
-        bundle_name=$(basename "$bundle" .bundle)
-        if [[ "$bundle_name" == "${module}-"* ]]; then
-            MODULE_FEATURE_BUNDLE="$bundle"
-            break
-        fi
-    done
-    
-    if [[ -n "$MODULE_FEATURE_BUNDLE" ]]; then
-        echo "Importing submodule feature bundle: $module -> $(basename "$MODULE_FEATURE_BUNDLE")"
-        
-        # Extract feature branch name from bundle filename
-        BUNDLE_NAME=$(basename "$MODULE_FEATURE_BUNDLE" .bundle)
-        FEATURE_BRANCH="${BUNDLE_NAME#${module}-}"
-        
-        if [[ "$FEATURE_BRANCH" == "$BUNDLE_NAME" ]]; then
-            echo "Error: Could not extract feature branch name from bundle filename" >&2
-            continue
-        fi
-        
-        echo "Feature branch: $FEATURE_BRANCH"
-        
-        # Check if submodule is initialized
-        if [[ -d "$module/.git" ]]; then
-            # Fetch the feature branch from bundle
-            git -C "$module" fetch "$MODULE_FEATURE_BUNDLE" "$FEATURE_BRANCH:$FEATURE_BRANCH"
-            echo "Successfully imported submodule feature branch: $module/$FEATURE_BRANCH"
-        else
-            echo "Warning: Submodule '$module' is not initialized, skipping..."
-        fi
-    else
-        echo "Warning: No feature bundle found for submodule '$module'"
-    fi
-done
 
 echo
 echo "=== Import completed ==="
