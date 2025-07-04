@@ -53,11 +53,7 @@ check_requirements() {
 check_directories() {
     print_info "检查目录结构..."
     
-    # 验证配置
-    if ! validate_config; then
-        exit 1
-    fi
-    
+    # 只检查 BUNDLES_DIR 和 RESTORE_DIR，不再调用 validate_config
     if [ ! -d "$BUNDLES_DIR" ]; then
         print_error "$BUNDLES_DIR 目录不存在"
         exit 1
@@ -76,6 +72,12 @@ check_directories() {
         mkdir -p "$RESTORE_DIR"
     else
         print_warning "$RESTORE_DIR 目录已存在，将清空内容"
+        echo -e "${YELLOW}你确定要清空 $RESTORE_DIR 吗？此操作不可恢复。输入 yes 继续，否则退出：${NC}"
+        read -r confirm
+        if [ "$confirm" != "yes" ]; then
+            print_error "用户取消操作，退出。"
+            exit 1
+        fi
         rm -rf "$RESTORE_DIR"/*
     fi
     
