@@ -1,235 +1,293 @@
-# Git 离线包管理器
+# Git 离线包管理系统
 
-> 通过工具脚本实现包含子模块的仓库离线同步与协作开发
+这是一个用于管理大型Git项目（包含子模块）的离线开发解决方案，特别适用于网络受限或需要离线开发的环境。
 
----
+## 系统概述
 
-## 🎯 快速开始
+该系统通过Git bundle技术实现离线开发，支持：
+- 首次全量分发
+- 增量更新
+- 子模块管理
+- 自动合并
 
-### 环境要求
-- Git ≥ 2.20
-- Bash 环境
+## 工作流程
 
-### 仓库结构
 ```
-slam-core/                    # 主仓库
-├── .gitmodules              # 子模块配置
-├── module_a/                # 子模块A
-└── module_b/                # 子模块B
-```
-
----
-
-## 📋 工具概览
-
-本工具集提供完整的离线开发工作流，包含以下脚本：
-
-| 脚本 | 用途 | 使用场景 |
-|------|------|----------|
-| `export-full.sh` | 导出完整仓库包 | 服务器端发布 |
-| `import-feature.sh` | 导入功能分支包 | 服务器端接收 |
-| `init-from-bundle.sh` | 从包文件初始化仓库 | 本地端首次设置 |
-| `create-feature-branch.sh` | 创建功能分支 | 本地开发准备 |
-| `export-feature.sh` | 导出功能分支包 | 本地提交代码 |
-| `update-from-server.sh` | 从服务器更新 | 本地同步更新 |
-
----
-
-## ⚙️ 配置设置
-
-### 1. 服务器端配置
-
-编辑 `tools/server.config`：
-
-```ini
-[main]
-repo_path=/srv/git/slam-core
-output_dir=/srv/bundles
-# modules=module_a,module_b  # 可选：不指定则自动检测
+阶段    角色    脚本/动作    产物    备注
+① 首次分发    ROOT    make_offline_package.sh <branch> <depth>    offline_pkg_YYYYMMDD.tar.gz    slam-core.bundle（空架子）+ submodules/*.bundle（各子模块最近 N 次提交）    Git 2.25；仅一次全量
+② 初始化    LOCAL    解压包 → clone+init 子模块（脚本已内嵌）    本地可编辑仓库    子模块拥有 Git 历史
+③ 开发    LOCAL    在子模块建分支 feature/*，正常 commit；回到 slam-core 提交指针    —    无需管远程
+④ 交付差分    LOCAL    export_changes.sh    local_out_<ts>/    └ slam-core.delta.bundle    └ submodules/*.delta.bundle    只含增量，通常几 MB
+⑤ 导入合并    ROOT    import_from_local.sh /path/to/local_out    本地新分支 + 合并 commit    通过后 git push/MR
+⑥ 周期循环    ROOT → LOCAL    再跑 ①（增量），LOCAL fetch 后继续 ③    —    迭代轻量进行
 ```
 
-### 2. 本地端配置
+## 脚本说明
 
-编辑 `tools/local.config`：
+### 1. 离线包创建脚本
 
-```ini
-[main]
-repo_path=~/projects/slam-core
-bundle_source=/media/usb
-# modules=module_a,module_b  # 可选：不指定则自动检测
-feature_branch=dev/awesome-feature
-```
+#### create_package.sh - 完全基于配置文件的脚本（推荐）
 
----
+**功能**: 使用配置文件中的所有参数创建离线包
 
-## 🚀 使用指南
-
-### 1. 服务器端 - 导出完整仓库
-
+**用法**: 
 ```bash
-cd tools
-./export-full.sh
+./create_package.sh
 ```
 
-**功能：**
-- 自动检测子模块
-- 生成带时间戳的包目录
-- 创建详细的导出报告
-- 支持自定义配置文件
+**特点**: 无需任何参数，完全基于配置文件
 
-**输出：**
-```
-/srv/bundles/20241201_1430_bundles/
-├── slam-core.bundle
-├── module_a.bundle
-├── module_b.bundle
-└── bundle_report.md
-```
-
-### 2. 本地端 - 初始化仓库
-
+**示例**:
 ```bash
-cd tools
-./init-from-bundle.sh
+./create_package.sh
 ```
 
-**功能：**
-- 从包文件克隆主仓库
-- 自动初始化所有子模块
-- 智能检测分支名称（main/master）
-- 提供后续步骤指导
+#### make_offline_package.sh - 可指定分支的脚本
 
-**前置条件：**
-- 确保包文件在 `bundle_source` 目录中
-- 确保目标路径不存在
+**功能**: 创建包含slam-core和子模块的离线包
 
-### 3. 创建功能分支
-
+**用法**: 
 ```bash
-cd tools
-./create-feature-branch.sh my-feature
+./make_offline_package.sh [branch]
 ```
 
-**功能：**
-- 为主仓库和所有子模块创建 `dev/my-feature` 分支
-- 自动切换到新分支
-- 验证分支名称格式
-- 提供开发指导
+**参数**:
+- `branch`: 可选，要打包的分支名（如 main）。不指定则使用配置文件中的默认分支
 
-### 4. 导出功能分支包
-
+**示例**:
 ```bash
-cd tools
-./export-feature.sh
+./make_offline_package.sh        # 使用配置文件中的默认分支
+./make_offline_package.sh main   # 使用指定的分支
 ```
 
-**功能：**
-- 导出当前功能分支的增量包
-- 自动检测子模块变更
-- 生成标准命名的包文件
-- 提供提交指导
+**注意**: depth参数在`config_root.sh`中配置
 
-**输出：**
-```
-./bundles/
-├── slam-core-dev-my-feature.bundle
-├── module_a-dev-my-feature.bundle
-└── module_b-dev-my-feature.bundle
-```
+**产物**:
+- `offline_pkg_YYYYMMDD.tar.gz` - 完整的离线包
+- 包含 `slam-core.bundle` 和 `submodules/*.bundle`
+- 自动生成 `init_repository.sh` 初始化脚本
 
-### 5. 服务器端 - 导入功能包
+### 2. export_changes.sh - 交付差分脚本
 
+**功能**: 导出本地开发的变化，创建增量bundle
+
+**用法**: 
 ```bash
-cd tools
-./import-feature.sh /path/to/bundles
+./export_changes.sh
 ```
 
-**功能：**
-- 从指定目录导入所有功能包
-- 自动匹配主仓库和子模块包
-- 提取功能分支名称
-- 提供合并指导
+**要求**: 在slam-core目录中运行
 
-### 6. 同步服务器更新
+**产物**:
+- `local_out_<timestamp>/` - 增量包目录
+- `slam-core.delta.bundle` - 主项目增量
+- `submodules/*.delta.bundle` - 子模块增量
 
+### 3. import_from_local.sh - 导入合并脚本
+
+**功能**: 将本地开发的变化导入到ROOT环境
+
+**用法**: 
 ```bash
-cd tools
-./update-from-server.sh
+./import_from_local.sh /path/to/local_out
 ```
 
-**功能：**
-- 从服务器包更新本地仓库
-- 智能处理功能分支和主分支
-- 自动更新所有子模块
-- 保持开发分支状态
+**参数**:
+- `local_out`: 本地导出目录的路径
 
----
-
-## 📁 文件命名规范
-
-| 类型 | 命名示例 | 说明 |
-|------|----------|------|
-| 完整包 | `slam-core.bundle` | 包含所有分支和标签 |
-| 功能包 | `slam-core-dev-feature.bundle` | 增量包，仅包含变更 |
-| 子模块包 | `module_a.bundle` | 子模块的完整包 |
-| 子模块功能包 | `module_a-dev-feature.bundle` | 子模块的增量包 |
-
----
-
-## 🔧 高级用法
-
-### 使用自定义配置文件
-
+**示例**:
 ```bash
-# 服务器端
-./export-full.sh /path/to/custom-server.config
-
-# 本地端
-./init-from-bundle.sh /path/to/custom-local.config
+./import_from_local.sh ./local_out_20231201_143022
 ```
 
-### 自动检测子模块
+## 使用步骤
 
-工具会自动从 `.gitmodules` 文件检测子模块，无需手动配置：
+### 阶段①: 首次分发 (ROOT环境)
 
+1. 在包含子模块的Git仓库中运行：
 ```bash
-# 自动检测结果示例
-Detected submodules: module_a,module_b
+# 方式一：完全基于配置文件（推荐）
+./create_package.sh
+
+# 方式二：指定分支
+./make_offline_package.sh main
 ```
 
-### 批量处理
+2. 将生成的 `offline_pkg_YYYYMMDD.tar.gz` 分发给开发者
 
+### 阶段②: 初始化 (LOCAL环境)
+
+1. 解压离线包：
 ```bash
-# 批量创建多个功能分支
-for feature in feature1 feature2 feature3; do
-    ./create-feature-branch.sh $feature
-done
+tar -xzf offline_pkg_YYYYMMDD.tar.gz
 ```
 
----
+2. 运行初始化脚本：
+```bash
+./init_repository.sh
+```
 
-## 🛠️ 故障排除
+3. 进入开发目录：
+```bash
+cd slam-core
+```
+
+### 阶段③: 开发 (LOCAL环境)
+
+1. 在子模块中创建功能分支：
+```bash
+cd submodule_name
+git checkout -b feature/your-feature
+```
+
+2. 正常开发并提交：
+```bash
+# 修改代码
+git add .
+git commit -m "添加新功能"
+```
+
+3. 回到slam-core提交指针更新：
+```bash
+cd ..
+git add submodule_name
+git commit -m "更新子模块指针"
+```
+
+### 阶段④: 交付差分 (LOCAL环境)
+
+1. 在slam-core目录中运行：
+```bash
+./export_changes.sh
+```
+
+2. 将生成的 `local_out_<timestamp>/` 目录复制到ROOT环境
+
+### 阶段⑤: 导入合并 (ROOT环境)
+
+1. 在原始Git仓库中运行：
+```bash
+./import_from_local.sh /path/to/local_out_<timestamp>
+```
+
+2. 检查合并结果并推送到远程：
+```bash
+git log --oneline -10  # 检查导入的提交
+git push origin main   # 推送到远程
+```
+
+### 阶段⑥: 周期循环
+
+重复阶段①-⑤，进行增量更新。
+
+## 系统要求
+
+- **Git版本**: 2.25+ (兼容Ubuntu 20.04的Git 2.25.1)
+- **操作系统**: Linux (Ubuntu 20.04+)
+- **权限**: 脚本需要执行权限
+
+## 配置文件
+
+系统提供了两个简化的配置文件，让用户可以通过修改配置文件来定制系统行为：
+
+- **`config_root.sh`** - ROOT环境配置文件（有网络连接）
+- **`config_local.sh`** - LOCAL环境配置文件（离线开发）
+
+### 快速配置
+
+1. **修改项目名称**：
+   ```bash
+   # 在两个配置文件中同时修改
+   PROJECT_NAME="your-project-name"
+   ```
+
+2. **修改默认分支**：
+   ```bash
+   # 在两个配置文件中同时修改
+   DEFAULT_BRANCH="develop"
+   ```
+
+3. **调整子模块深度**：
+   ```bash
+   # 只在config_root.sh中修改
+   DEFAULT_DEPTH=20
+   ```
+
+4. **验证配置**：
+   ```bash
+   ./config_root.sh    # 验证ROOT环境配置
+   ./config_local.sh   # 验证LOCAL环境配置
+   ```
+
+详细配置说明请参考：`CONFIG_GUIDE.md`
+
+## 注意事项
+
+1. **Git版本兼容性**: 确保使用Git 2.25+版本
+2. **子模块管理**: 所有代码都在子模块中，slam-core只保存指针
+3. **增量更新**: 每轮只传输差分，通常几MB大小
+4. **冲突处理**: 导入时如遇冲突需要手动解决
+5. **备份**: 建议在重要操作前备份数据
+
+## 故障排除
 
 ### 常见问题
 
-| 问题 | 解决方案 |
-|------|----------|
-| 配置文件路径错误 | 检查 `repo_path` 和 `bundle_source` 路径 |
-| 子模块未初始化 | 运行 `git submodule init` 后重试 |
-| 包文件不存在 | 确保包文件在指定目录中 |
-| 分支名称冲突 | 使用 `create-feature-branch.sh` 创建新分支 |
+1. **权限错误**: 确保脚本有执行权限
+```bash
+chmod +x *.sh
+```
+
+2. **Git版本过低**: 检查Git版本
+```bash
+git --version
+```
+
+3. **子模块问题**: 确保子模块正确初始化
+```bash
+git submodule update --init --recursive
+```
+
+4. **合并冲突**: 手动解决冲突后继续
+```bash
+# 解决冲突
+git add .
+git commit
+```
 
 ### 调试模式
 
-所有脚本都支持详细输出，遇到问题时可以查看：
-
+在脚本开头添加调试信息：
 ```bash
-# 查看脚本执行过程
-bash -x ./export-full.sh
+set -x  # 显示执行的命令
 ```
 
----
+## 扩展功能
 
-## 📄 许可证
+- **自动化**: 可以集成到CI/CD流程
+- **版本管理**: 支持多版本离线包管理
+- **压缩优化**: 支持不同的压缩算法
+- **安全**: 可以添加签名验证
+- **配置化**: 支持通过配置文件定制系统行为
+- **并行处理**: 支持多核并行处理提高性能
+- **通知系统**: 支持邮件通知和自定义钩子
 
-MIT License - 可自由修改与分发
+## 文件结构
+
+```
+git-offline-bundle-manager/
+├── make_offline_package.sh    # 首次分发脚本
+├── export_changes.sh          # 交付差分脚本
+├── import_from_local.sh       # 导入合并脚本
+├── config_root.sh             # ROOT环境配置文件
+├── config_local.sh            # LOCAL环境配置文件
+├── test_system.sh             # 系统测试脚本
+├── README.md                  # 详细使用文档
+├── QUICKSTART.md              # 快速开始指南
+├── CONFIG_GUIDE.md            # 配置文件使用指南
+└── .gitignore                 # Git忽略文件
+```
+
+## 贡献
+
+欢迎提交Issue和Pull Request来改进这个系统。
