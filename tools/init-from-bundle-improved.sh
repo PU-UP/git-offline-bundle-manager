@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
-# Initialize repository from bundle files
-# Local-side script for initial clone from bundle
+# Improved initialization script from bundle files
+# This version ensures complete git history is restored
 
 set -euo pipefail
 
@@ -71,7 +71,7 @@ fi
 # Get repository name from path
 REPO_NAME=$(basename "$REPO_PATH")
 
-echo "=== Initializing repository from bundle ==="
+echo "=== Initializing repository from bundle (Improved Version) ==="
 echo "Repository path: $REPO_PATH"
 echo "Bundle source: $BUNDLE_SOURCE"
 echo "Modules: $MODULES"
@@ -141,15 +141,59 @@ if [[ ! -d "$PARENT_DIR" ]]; then
     mkdir -p "$PARENT_DIR"
 fi
 
-# Clone main repository from bundle
+# Initialize main repository with complete history
 echo
-echo "Cloning main repository from bundle..."
-git clone "$MAIN_BUNDLE" "$REPO_PATH"
-cd "$REPO_PATH"
+echo "Initializing main repository from bundle..."
+cd "$PARENT_DIR"
 
-# Fetch all branches from bundle to get complete history
-echo "Fetching all branches from main repository bundle..."
+# Create empty repository
+git init "$REPO_NAME"
+cd "$REPO_NAME"
+
+# Add bundle as remote
+git remote add origin "$MAIN_BUNDLE"
+
+# Fetch ALL branches and tags from bundle
+echo "Fetching all branches and tags from main repository bundle..."
 git fetch --all
+
+# Show available branches
+echo "Available branches in main repository:"
+git branch -r | sed 's/origin\///' | sort
+
+# Determine which branch to checkout as default
+DEFAULT_BRANCH=""
+if [[ -n "$BASE_BRANCH" ]] && git show-ref --verify --quiet refs/remotes/origin/"$BASE_BRANCH"; then
+    DEFAULT_BRANCH="$BASE_BRANCH"
+    echo "Using configured base branch: $DEFAULT_BRANCH"
+elif git show-ref --verify --quiet refs/remotes/origin/main; then
+    DEFAULT_BRANCH="main"
+    echo "Using main branch"
+elif git show-ref --verify --quiet refs/remotes/origin/master; then
+    DEFAULT_BRANCH="master"
+    echo "Using master branch"
+else
+    # Use the first available branch
+    FIRST_BRANCH=$(git branch -r | head -n1 | sed 's/origin\///')
+    if [[ -n "$FIRST_BRANCH" ]]; then
+        DEFAULT_BRANCH="$FIRST_BRANCH"
+        echo "Using first available branch: $DEFAULT_BRANCH"
+    else
+        echo "Error: No branches found in main repository bundle" >&2
+        exit 1
+    fi
+fi
+
+# Checkout the default branch
+echo "Checking out default branch: $DEFAULT_BRANCH"
+git checkout -b "$DEFAULT_BRANCH" "origin/$DEFAULT_BRANCH"
+
+# Show repository status
+echo "Main repository initialized successfully!"
+echo "Current branch: $(git branch --show-current)"
+echo "Current commit: $(git rev-parse --short HEAD)"
+echo "Total branches: $(git branch -r | wc -l)"
+echo "Total tags: $(git tag | wc -l)"
 
 # Initialize submodules
 echo
@@ -198,6 +242,10 @@ for module in "${MODULE_ARRAY[@]}"; do
     # Fetch all branches from bundle
     git -C "$module" fetch --all
     
+    # Show available branches in submodule
+    echo "Available branches in submodule $module:"
+    git -C "$module" branch -r | sed 's/origin\///' | sort
+    
     # Determine which branch to checkout
     TARGET_BRANCH=""
     
@@ -239,6 +287,8 @@ for module in "${MODULE_ARRAY[@]}"; do
         CURRENT_BRANCH=$(git -C "$module" branch --show-current)
         echo "Current branch: $CURRENT_BRANCH (detached HEAD)"
         echo "Current commit: $(git -C "$module" rev-parse --short HEAD)"
+        echo "Total branches: $(git -C "$module" branch -r | wc -l)"
+        echo "Total tags: $(git -C "$module" tag | wc -l)"
     else
         echo "Warning: Expected commit $EXPECTED_COMMIT not found in submodule bundle: $module"
         echo "This might indicate a problem with the bundle file"
@@ -252,13 +302,30 @@ for module in "${MODULE_ARRAY[@]}"; do
 done
 
 echo
-echo "=== Repository initialization completed ==="
+echo "=== Repository initialization completed (Improved Version) ==="
 echo "Repository location: $REPO_PATH"
+echo
+echo "✅ Main repository:"
+echo "   - All branches and tags restored"
+echo "   - Current branch: $(git branch --show-current)"
+echo "   - Total branches: $(git branch -r | wc -l)"
+echo "   - Total tags: $(git tag | wc -l)"
+echo
+echo "✅ Submodules:"
+for module in "${MODULE_ARRAY[@]}"; do
+    module=$(echo "$module" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+    if [[ -d "$module/.git" ]]; then
+        echo "   - $module: $(git -C "$module" branch -r | wc -l) branches, $(git -C "$module" tag | wc -l) tags"
+    fi
+done
 echo
 echo "Next steps:"
 echo "1. cd $REPO_PATH"
-echo "2. Create a feature branch: git checkout -b dev/your-feature"
-echo "3. Create feature branches for submodules:"
+echo "2. List all branches: git branch -a"
+echo "3. List all tags: git tag"
+echo "4. Switch to any branch: git checkout <branch-name>"
+echo "5. Create a feature branch: git checkout -b dev/your-feature"
+echo "6. Create feature branches for submodules:"
 for module in "${MODULE_ARRAY[@]}"; do
     module=$(echo "$module" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
     echo "   git -C $module checkout -b dev/your-feature"
