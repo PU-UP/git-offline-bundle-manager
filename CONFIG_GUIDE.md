@@ -2,6 +2,8 @@
 
 ## 概述
 
+本工具用于从本地Git仓库创建离线包，支持主项目和子模块的完整离线开发环境。
+
 Git离线包管理系统提供了两个简化的配置文件：
 
 - `config_root.sh` - ROOT环境配置文件（有网络连接）
@@ -11,48 +13,60 @@ Git离线包管理系统提供了两个简化的配置文件：
 
 ### config_root.sh (ROOT环境)
 
-```bash
-# 基础配置（必需）
-PROJECT_NAME="slam-core"        # 项目名称
-DEFAULT_BRANCH="main"           # 默认分支
-DEFAULT_DEPTH=10               # 子模块提交深度
+用于创建离线包的配置，包含以下主要设置：
 
-# Git配置
-MIN_GIT_VERSION="2.25.0"       # Git版本要求
+#### 基础配置
+- `PROJECT_NAME`: 项目名称（默认: "slam-core"）
+- `DEFAULT_BRANCH`: 默认分支名称（默认: "main"）
+- `DEFAULT_DEPTH`: 子模块提交深度，控制离线包大小（默认: 10）
 
-# 打包配置
-COMPRESSION_FORMAT="tar.gz"    # 压缩格式
-CLEANUP_TEMP_FILES=true        # 清理临时文件
+#### 本地仓库配置
+- `LOCAL_REPO_PATH`: **本地仓库路径**（重要配置）
+  - 如果为空：假设当前目录就是Git仓库根目录
+  - 相对路径：如 `"../my-project"` 或 `"../../repos/slam-core"`
+  - 绝对路径：如 `"/home/user/projects/slam-core"`
+  - 示例：`LOCAL_REPO_PATH="/path/to/your/local/repo"`
 
-# 导入配置
-BACKUP_BEFORE_IMPORT=true      # 导入前备份
-MERGE_STRATEGY="recursive"     # 合并策略
+- `REMOTE_NAME`: 远程仓库名称（默认: "origin"）
+- `SOURCE_REPO_URL`: 源仓库URL（可选，主要用于验证）
 
-# 日志配置
-VERBOSE_LOGGING=true           # 详细日志
-LOG_FILE="offline_package.log" # 日志文件
-```
+#### 打包配置
+- `COMPRESSION_FORMAT`: 压缩格式（tar.gz, tar.bz2, tar.xz）
+- `CLEANUP_TEMP_FILES`: 是否清理临时文件
+
+#### 导入配置
+- `BACKUP_BEFORE_IMPORT`: 导入前备份（默认: true）
+- `MERGE_STRATEGY`: 合并策略（默认: "recursive"）
+
+#### 日志配置
+- `VERBOSE_LOGGING`: 详细日志（默认: true）
+- `LOG_FILE`: 日志文件（默认: "offline_package.log"）
 
 ### config_local.sh (LOCAL环境)
 
-```bash
-# 基础配置（必需）
-PROJECT_NAME="slam-core"        # 项目名称（与ROOT保持一致）
-LOCAL_DEV_DIR="slam-core"      # 本地开发目录
-SUBMODULES_DIR="submodules"    # 子模块目录
-DEFAULT_BRANCH="main"          # 默认分支（与ROOT保持一致）
+用于本地开发环境的配置：
 
-# Git配置
-MIN_GIT_VERSION="2.25.0"       # Git版本要求
-CHECK_UNCOMMITTED_CHANGES=true # 检查未提交更改
+#### 基础配置
+- `PROJECT_NAME`: 项目名称（应与ROOT环境一致）
+- `LOCAL_DEV_DIR`: 本地开发目录名称
+- `SUBMODULES_DIR`: 子模块目录名称
+- `DEFAULT_BRANCH`: 默认分支名称（应与ROOT环境一致）
 
-# 导出配置
-VERIFY_BUNDLE_INTEGRITY=true   # 验证bundle完整性
+#### 本地仓库配置
+- `LOCAL_REPO_PATH`: 本地仓库路径
+  - 如果为空：使用 `LOCAL_DEV_DIR` 作为路径
+  - 示例：`LOCAL_REPO_PATH="./slam-core"`
 
-# 日志配置
-VERBOSE_LOGGING=true           # 详细日志
-LOG_FILE="local_development.log" # 日志文件
-```
+#### Git配置
+- `MIN_GIT_VERSION`: Git版本要求（默认: "2.25.0"）
+- `CHECK_UNCOMMITTED_CHANGES`: 检查未提交更改（默认: true）
+
+#### 导出配置
+- `VERIFY_BUNDLE_INTEGRITY`: 验证bundle完整性（默认: true）
+
+#### 日志配置
+- `VERBOSE_LOGGING`: 详细日志（默认: true）
+- `LOG_FILE`: 日志文件（默认: "local_development.log"）
 
 ## 常用配置修改
 
@@ -123,6 +137,10 @@ echo "默认分支: $DEFAULT_BRANCH"
 2. **必需配置**: 基础配置中的所有项目都是必需的，不能为空
 3. **子模块自动检测**: 系统会自动从`.gitmodules`文件读取子模块，无需手动配置
 4. **Git版本**: 确保系统Git版本满足要求（2.25.0+）
+5. **本地仓库路径**：确保指定的路径是一个有效的Git仓库（包含 `.git` 目录）
+6. **权限**：确保脚本有权限访问指定的本地仓库路径
+7. **分支存在**：确保指定的分支在本地仓库中存在
+8. **子模块**：如果项目包含子模块，确保子模块已正确初始化
 
 ## 故障排除
 
@@ -145,6 +163,24 @@ echo "默认分支: $DEFAULT_BRANCH"
    错误: 不支持的压缩格式: invalid_format
    解决: 使用支持的格式: tar.gz, tar.bz2, tar.xz
    ```
+
+4. **本地仓库路径不存在**：
+   ```
+   错误: 本地仓库路径不存在: /path/to/repo
+   ```
+   **解决方案**：检查 `LOCAL_REPO_PATH` 配置是否正确，确保路径存在。
+
+5. **指定的路径不是Git仓库**：
+   ```
+   错误: 指定的路径不是Git仓库: /path/to/repo
+   ```
+   **解决方案**：确保指定路径包含 `.git` 目录，是一个有效的Git仓库。
+
+6. **分支不存在**：
+   ```
+   错误: 分支 'main' 不存在
+   ```
+   **解决方案**：检查本地仓库中是否存在指定的分支，或修改 `DEFAULT_BRANCH` 配置。
 
 ### 配置调试
 

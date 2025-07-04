@@ -2,6 +2,16 @@
 
 # config_local.sh - LOCAL环境配置文件
 # 简化版本，只包含最必要的配置项
+#
+# 重要说明：
+# 1. 此配置文件用于本地开发环境
+# 2. LOCAL_REPO_PATH 通常指向解压后的项目目录
+# 3. 如果为空，将使用 LOCAL_DEV_DIR 作为路径
+#
+# 使用步骤：
+# 1. 解压离线包后，根据需要调整 LOCAL_REPO_PATH
+# 2. 运行 ./init_repository.sh 初始化本地仓库
+# 3. 开始离线开发
 
 # =============================================================================
 # 基础配置（必需）
@@ -18,6 +28,13 @@ SUBMODULES_DIR="submodules"
 
 # 默认分支名称（应与ROOT环境保持一致）
 DEFAULT_BRANCH="main"
+
+# 本地仓库路径（相对于当前目录）
+# 如果为空，将使用LOCAL_DEV_DIR
+LOCAL_REPO_PATH=""
+
+# 远程仓库名称（通常是origin）
+REMOTE_NAME="origin"
 
 # =============================================================================
 # Git配置
@@ -116,6 +133,8 @@ export_config() {
     export LOCAL_DEV_DIR
     export SUBMODULES_DIR
     export DEFAULT_BRANCH
+    export LOCAL_REPO_PATH
+    export REMOTE_NAME
     export MIN_GIT_VERSION
     export CHECK_UNCOMMITTED_CHANGES
     export VERIFY_BUNDLE_INTEGRITY

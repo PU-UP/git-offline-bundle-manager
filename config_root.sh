@@ -2,6 +2,16 @@
 
 # config_root.sh - ROOT环境配置文件
 # 简化版本，只包含最必要的配置项
+#
+# 重要说明：
+# 1. 此工具从本地Git仓库创建离线包，不是从远程仓库拉取
+# 2. 必须配置 LOCAL_REPO_PATH 指向您的本地Git仓库
+# 3. 确保指定的路径是一个有效的Git仓库（包含 .git 目录）
+#
+# 使用步骤：
+# 1. 设置 LOCAL_REPO_PATH 为您的本地仓库路径
+# 2. 根据需要调整其他配置
+# 3. 运行 ./make_offline_package.sh 创建离线包
 
 # =============================================================================
 # 基础配置（必需）
@@ -15,6 +25,19 @@ DEFAULT_BRANCH="main"
 
 # 默认子模块提交深度（控制离线包大小）
 DEFAULT_DEPTH=10
+
+# 源仓库地址（用于创建离线包时验证）
+# 格式: https://github.com/username/repo.git 或 git@github.com:username/repo.git
+# 注意: 此工具从本地仓库创建离线包，此配置主要用于验证
+SOURCE_REPO_URL=""
+
+# 远程仓库名称（通常是origin）
+REMOTE_NAME="origin"
+
+# 本地仓库路径（相对于当前目录或绝对路径）
+# 如果为空，假设当前目录就是仓库根目录
+# 示例: "/path/to/your/repo" 或 "../my-project"
+LOCAL_REPO_PATH=""
 
 # =============================================================================
 # Git配置
@@ -134,6 +157,9 @@ export_config() {
     export MERGE_STRATEGY
     export VERBOSE_LOGGING
     export LOG_FILE
+    export SOURCE_REPO_URL
+    export REMOTE_NAME
+    export LOCAL_REPO_PATH
 }
 
 # 如果直接执行此脚本，则验证配置

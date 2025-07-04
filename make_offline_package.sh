@@ -46,15 +46,38 @@ echo "包名: $PACKAGE_NAME"
 GIT_VERSION=$(git --version | awk '{print $3}')
 echo "Git版本: $GIT_VERSION"
 
-# 检查当前是否在Git仓库中
-if [ ! -d ".git" ]; then
-    echo "错误: 当前目录不是Git仓库"
+# 确定本地仓库路径
+if [ -n "$LOCAL_REPO_PATH" ]; then
+    REPO_PATH="$LOCAL_REPO_PATH"
+    echo "使用配置的本地仓库路径: $REPO_PATH"
+else
+    REPO_PATH="."
+    echo "使用当前目录作为本地仓库路径"
+fi
+
+# 检查本地仓库路径是否存在
+if [ ! -d "$REPO_PATH" ]; then
+    echo "错误: 本地仓库路径不存在: $REPO_PATH"
     exit 1
 fi
+
+# 检查是否在Git仓库中
+if [ ! -d "$REPO_PATH/.git" ]; then
+    echo "错误: 指定的路径不是Git仓库: $REPO_PATH"
+    exit 1
+fi
+
+# 保存当前目录
+CURRENT_DIR=$(pwd)
+
+# 切换到本地仓库目录
+echo "切换到本地仓库目录: $REPO_PATH"
+cd "$REPO_PATH"
 
 # 检查分支是否存在
 if ! git rev-parse --verify "$BRANCH" >/dev/null 2>&1; then
     echo "错误: 分支 '$BRANCH' 不存在"
+    cd "$CURRENT_DIR"
     exit 1
 fi
 
@@ -204,6 +227,9 @@ tar -czf "../$PACKAGE_NAME" .
 # 清理临时目录
 cd ..
 rm -rf "$TEMP_DIR"
+
+# 返回到原始目录
+cd "$CURRENT_DIR"
 
 echo "=== 离线包创建完成 ==="
 echo "包名: $PACKAGE_NAME"

@@ -17,7 +17,29 @@ git --version
 chmod +x *.sh
 ```
 
-### 2. 测试系统
+### 2. 配置本地仓库路径
+
+在创建离线包之前，需要配置本地仓库路径：
+
+```bash
+# 编辑ROOT环境配置文件
+nano config_root.sh
+```
+
+找到并设置 `LOCAL_REPO_PATH`：
+
+```bash
+# 如果本地仓库在指定路径
+LOCAL_REPO_PATH="/path/to/your/local/repo"
+
+# 如果本地仓库就是当前目录
+LOCAL_REPO_PATH=""
+
+# 如果本地仓库在当前目录的上级目录
+LOCAL_REPO_PATH="../slam-core"
+```
+
+### 3. 测试系统
 
 运行测试脚本验证系统功能：
 
@@ -25,7 +47,7 @@ chmod +x *.sh
 ./test_system.sh
 ```
 
-### 3. 实际使用
+### 4. 实际使用
 
 #### ROOT环境（有网络连接）
 

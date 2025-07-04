@@ -20,8 +20,17 @@ PROJECT_NAME="your-project-name"    # ← 改为您的项目名
 DEFAULT_BRANCH="main"               # ← 改为您的主分支
 DEFAULT_DEPTH=10                   # ← 子模块历史深度
 
+# 本地仓库配置（重要）
+LOCAL_REPO_PATH="/path/to/repo"    # 本地仓库路径
+# 或者如果当前目录就是仓库：LOCAL_REPO_PATH=""
+
 # 其他配置保持默认即可
 ```
+
+**本地仓库路径说明**：
+- 如果本地仓库在指定路径：`LOCAL_REPO_PATH="/home/user/projects/your-repo"`
+- 如果当前目录就是仓库：`LOCAL_REPO_PATH=""`
+- 如果仓库在相对路径：`LOCAL_REPO_PATH="../my-project"`
 
 ### 3. 创建离线包
 
@@ -78,6 +87,7 @@ git push origin main
 PROJECT_NAME="your-project-name"    # 项目名称
 DEFAULT_BRANCH="main"               # 主分支
 DEFAULT_DEPTH=10                   # 子模块深度
+LOCAL_REPO_PATH="/path/to/repo"    # 本地仓库路径
 ```
 
 ### 可选修改的配置
