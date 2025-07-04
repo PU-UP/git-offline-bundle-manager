@@ -6,20 +6,51 @@
 
 set -e
 
+# 加载配置文件
+if [ -f "config_local.sh" ]; then
+    source config_local.sh
+    export_config
+else
+    echo "错误: 找不到配置文件 config_local.sh"
+    exit 1
+fi
+
 # 获取时间戳
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-OUTPUT_DIR="local_out_${TIMESTAMP}"
+OUTPUT_DIR="$EXPORT_OUTPUT_PATH/local_out_${TIMESTAMP}"
 SUBMODULES_DIR="submodules"
 
 echo "=== 开始导出本地变化 ==="
 echo "输出目录: $OUTPUT_DIR"
 echo "时间戳: $TIMESTAMP"
 
-# 检查是否在slam-core目录中
-if [ ! -d ".git" ]; then
-    echo "错误: 请在slam-core目录中运行此脚本"
+# 使用配置的slam-core路径
+if [ -n "$SLAM_CORE_PATH" ]; then
+    REPO_PATH="$SLAM_CORE_PATH"
+    echo "使用配置的slam-core路径: $REPO_PATH"
+else
+    echo "错误: 请在config_local.sh中配置SLAM_CORE_PATH"
     exit 1
 fi
+
+# 检查slam-core路径是否存在
+if [ ! -d "$REPO_PATH" ]; then
+    echo "错误: slam-core路径不存在: $REPO_PATH"
+    exit 1
+fi
+
+# 检查是否在Git仓库中
+if [ ! -d "$REPO_PATH/.git" ]; then
+    echo "错误: 指定的路径不是Git仓库: $REPO_PATH"
+    exit 1
+fi
+
+# 保存当前目录
+CURRENT_DIR=$(pwd)
+
+# 切换到slam-core目录
+echo "切换到slam-core目录: $REPO_PATH"
+cd "$REPO_PATH"
 
 # 检查是否有子模块
 if [ ! -f ".gitmodules" ]; then
@@ -41,6 +72,7 @@ if [ -n "$(git status --porcelain)" ]; then
     read -p "是否继续？(y/N): " -n 1 -r
     echo
     if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        cd "$CURRENT_DIR"
         exit 1
     fi
 fi
@@ -67,15 +99,6 @@ if [ -n "$BASE_COMMIT" ]; then
 else
     echo "警告: 无法确定基础提交，创建完整bundle"
     git bundle create "$OUTPUT_DIR/slam-core.delta.bundle" --all
-fi
-
-# 加载配置文件
-if [ -f "config_local.sh" ]; then
-    source config_local.sh
-    export_config
-else
-    echo "错误: 找不到配置文件 config_local.sh"
-    exit 1
 fi
 
 # 处理子模块
@@ -156,6 +179,9 @@ done)
 1. 将此目录复制到ROOT环境
 2. 运行 import_from_local.sh 导入变化
 EOF
+
+# 返回到原始目录
+cd "$CURRENT_DIR"
 
 # 计算包大小
 TOTAL_SIZE=$(du -sh "$OUTPUT_DIR" | cut -f1)

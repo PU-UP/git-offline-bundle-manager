@@ -46,18 +46,18 @@ echo "包名: $PACKAGE_NAME"
 GIT_VERSION=$(git --version | awk '{print $3}')
 echo "Git版本: $GIT_VERSION"
 
-# 确定本地仓库路径
-if [ -n "$LOCAL_REPO_PATH" ]; then
-    REPO_PATH="$LOCAL_REPO_PATH"
-    echo "使用配置的本地仓库路径: $REPO_PATH"
+# 使用配置的slam-core路径
+if [ -n "$SLAM_CORE_PATH" ]; then
+    REPO_PATH="$SLAM_CORE_PATH"
+    echo "使用配置的slam-core路径: $REPO_PATH"
 else
-    REPO_PATH="."
-    echo "使用当前目录作为本地仓库路径"
+    echo "错误: 请在config_root.sh中配置SLAM_CORE_PATH"
+    exit 1
 fi
 
-# 检查本地仓库路径是否存在
+# 检查slam-core路径是否存在
 if [ ! -d "$REPO_PATH" ]; then
-    echo "错误: 本地仓库路径不存在: $REPO_PATH"
+    echo "错误: slam-core路径不存在: $REPO_PATH"
     exit 1
 fi
 
@@ -70,8 +70,8 @@ fi
 # 保存当前目录
 CURRENT_DIR=$(pwd)
 
-# 切换到本地仓库目录
-echo "切换到本地仓库目录: $REPO_PATH"
+# 切换到slam-core目录
+echo "切换到slam-core目录: $REPO_PATH"
 cd "$REPO_PATH"
 
 # 检查分支是否存在
@@ -85,9 +85,10 @@ fi
 echo "切换到分支: $BRANCH"
 git checkout "$BRANCH"
 
-# 创建临时目录
-TEMP_DIR=$(mktemp -d)
+# 创建临时目录（使用配置的输出路径而不是/tmp）
+TEMP_DIR="$PACKAGE_OUTPUT_PATH/temp_$(date +%Y%m%d_%H%M%S)"
 echo "创建临时目录: $TEMP_DIR"
+mkdir -p "$TEMP_DIR"
 
 # 创建slam-core.bundle（仅指针）
 echo "创建slam-core.bundle..."
@@ -219,20 +220,18 @@ cat > "$TEMP_DIR/README.md" << EOF
 - Git版本: $GIT_VERSION
 EOF
 
-# 打包
+# 打包到配置的输出路径
 echo "创建最终包: $PACKAGE_NAME"
 cd "$TEMP_DIR"
-tar -czf "../$PACKAGE_NAME" .
+tar -czf "$PACKAGE_OUTPUT_PATH/$PACKAGE_NAME" .
 
 # 清理临时目录
-cd ..
-rm -rf "$TEMP_DIR"
-
-# 返回到原始目录
 cd "$CURRENT_DIR"
+rm -rf "$TEMP_DIR"
 
 echo "=== 离线包创建完成 ==="
 echo "包名: $PACKAGE_NAME"
-echo "大小: $(du -h "$PACKAGE_NAME" | cut -f1)"
+echo "位置: $PACKAGE_OUTPUT_PATH/$PACKAGE_NAME"
+echo "大小: $(du -h "$PACKAGE_OUTPUT_PATH/$PACKAGE_NAME" | cut -f1)"
 echo ""
-echo "下一步: 将 $PACKAGE_NAME 分发给本地开发者" 
+echo "下一步: 将 $PACKAGE_OUTPUT_PATH/$PACKAGE_NAME 分发给本地开发者" 

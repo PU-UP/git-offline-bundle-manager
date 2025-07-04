@@ -1,19 +1,52 @@
 #!/bin/bash
 
 # import_from_local.sh - 导入合并脚本
-# 用法: ./import_from_local.sh /path/to/local_out
+# 用法: ./import_from_local.sh [local_out_dir]
 # 功能: 将本地开发的变化导入到ROOT环境
 
 set -e
 
+# 加载配置文件
+if [ -f "config_root.sh" ]; then
+    source config_root.sh
+    export_config
+else
+    echo "错误: 找不到配置文件 config_root.sh"
+    exit 1
+fi
+
 # 参数检查
-if [ $# -ne 1 ]; then
-    echo "用法: $0 /path/to/local_out"
+if [ $# -eq 0 ]; then
+    # 没有参数，使用配置文件中的默认导入路径
+    if [ -n "$IMPORT_SOURCE_PATH" ]; then
+        # 查找最新的local_out目录
+        LATEST_DIR=$(ls -td "$IMPORT_SOURCE_PATH"/local_out_* 2>/dev/null | head -1)
+        if [ -n "$LATEST_DIR" ]; then
+            LOCAL_OUT_DIR="$LATEST_DIR"
+            echo "使用最新的导入目录: $LOCAL_OUT_DIR"
+        else
+            echo "错误: 在 $IMPORT_SOURCE_PATH 中没有找到local_out目录"
+            echo "用法: $0 [local_out_dir]"
+            echo "示例: $0 ./local_out_20231201_143022"
+            exit 1
+        fi
+    else
+        echo "错误: 请在config_root.sh中配置IMPORT_SOURCE_PATH"
+        echo "用法: $0 [local_out_dir]"
+        echo "示例: $0 ./local_out_20231201_143022"
+        exit 1
+    fi
+elif [ $# -eq 1 ]; then
+    # 有参数，使用指定的目录
+    LOCAL_OUT_DIR="$1"
+    echo "使用指定的导入目录: $LOCAL_OUT_DIR"
+else
+    echo "用法: $0 [local_out_dir]"
+    echo "示例: $0          # 使用配置文件中的最新导入目录"
     echo "示例: $0 ./local_out_20231201_143022"
     exit 1
 fi
 
-LOCAL_OUT_DIR="$1"
 SUBMODULES_DIR="submodules"
 
 echo "=== 开始导入本地变化 ==="
@@ -60,15 +93,6 @@ if [ -n "$NEW_COMMITS" ]; then
     git log --oneline "$CURRENT_BRANCH..$IMPORT_BRANCH"
 else
     echo "slam-core 没有新提交"
-fi
-
-# 加载配置文件
-if [ -f "config_root.sh" ]; then
-    source config_root.sh
-    export_config
-else
-    echo "错误: 找不到配置文件 config_root.sh"
-    exit 1
 fi
 
 # 处理子模块

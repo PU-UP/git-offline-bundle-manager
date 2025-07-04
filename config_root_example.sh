@@ -1,17 +1,7 @@
 #!/bin/bash
 
-# config_root.sh - ROOT环境配置文件
-# 简化版本，只包含最必要的配置项
-#
-# 重要说明：
-# 1. 此工具从本地Git仓库创建离线包，不是从远程仓库拉取
-# 2. 必须配置三个路径：SLAM_CORE_PATH、PACKAGE_OUTPUT_PATH、IMPORT_SOURCE_PATH
-# 3. 确保指定的路径都是有效的
-#
-# 使用步骤：
-# 1. 设置三个路径配置
-# 2. 根据需要调整其他配置
-# 3. 运行 ./make_offline_package.sh 创建离线包
+# config_root_example.sh - ROOT环境配置示例文件
+# 复制此文件为 config_root.sh 并根据您的环境修改路径
 
 # =============================================================================
 # 基础配置（必需）
@@ -27,29 +17,26 @@ DEFAULT_BRANCH="main"
 DEFAULT_DEPTH=10
 
 # 源仓库地址（用于创建离线包时验证）
-# 格式: https://github.com/username/repo.git 或 git@github.com:username/repo.git
-# 注意: 此工具从本地仓库创建离线包，此配置主要用于验证
 SOURCE_REPO_URL=""
 
 # 远程仓库名称（通常是origin）
 REMOTE_NAME="origin"
 
 # =============================================================================
-# 路径配置（必需）
+# 路径配置（必需）- 请根据您的环境修改这些路径
 # =============================================================================
 
 # 1. slam-core所在位置（源仓库路径）
-# 如果为空，假设当前目录就是slam-core仓库
-# 示例: "/path/to/slam-core" 或 "../slam-core"
-SLAM_CORE_PATH=""
+# 示例: "/home/user/projects/slam-core" 或 "/opt/slam-core"
+SLAM_CORE_PATH="/path/to/your/slam-core"
 
 # 2. 把package生成到某个路径（输出目录）
-# 示例: "/path/to/output" 或 "./packages"
-PACKAGE_OUTPUT_PATH=""
+# 示例: "/home/user/packages" 或 "/opt/packages"
+PACKAGE_OUTPUT_PATH="/path/to/your/packages"
 
 # 3. 从哪里import_from_local（导入来源路径）
-# 示例: "/path/to/imports" 或 "./imports"
-IMPORT_SOURCE_PATH=""
+# 示例: "/home/user/imports" 或 "/opt/imports"
+IMPORT_SOURCE_PATH="/path/to/your/imports"
 
 # =============================================================================
 # Git配置
