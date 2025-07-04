@@ -96,3 +96,6 @@ TODO.md
 *.pid
 *.seed
 *.pid.lock 
+
+test
+test/*
