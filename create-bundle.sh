@@ -120,6 +120,179 @@ check_repo_clean() {
     return 0
 }
 
+# 检查分支是否存在
+check_branch_exists() {
+    local repo_path="$1"
+    local branch_name="$2"
+    
+    cd "$repo_path"
+    
+    # 检查分支是否存在
+    if git show-ref --verify --quiet "refs/heads/$branch_name" 2>/dev/null; then
+        cd - > /dev/null
+        return 0  # 分支存在
+    else
+        cd - > /dev/null
+        return 1  # 分支不存在
+    fi
+}
+
+# 检查所有仓库（主仓库和子模块）是否都存在指定分支
+check_all_repos_have_branch() {
+    local base_repo="$1"
+    local branch_name="$2"
+    
+    print_info "检查所有仓库是否都存在分支 $branch_name..."
+    
+    # 检查主仓库
+    if ! check_branch_exists "$base_repo" "$branch_name"; then
+        print_info "  主仓库不存在分支 $branch_name"
+        return 1
+    fi
+    print_success "  主仓库存在分支 $branch_name"
+    
+    # 检查子模块
+    if [ -f "$base_repo/.gitmodules" ]; then
+        cd "$base_repo"
+        
+        # 使用git submodule foreach检查所有子模块
+        local all_submodules_have_branch=true
+        
+        git submodule foreach "
+            if ! git show-ref --verify --quiet \"refs/heads/$branch_name\" 2>/dev/null; then
+                echo \"[INFO] 子模块 \$name 不存在分支 $branch_name\"
+                exit 1
+            else
+                echo \"[SUCCESS] 子模块 \$name 存在分支 $branch_name\"
+            fi
+        " || all_submodules_have_branch=false
+        
+        cd - > /dev/null
+        
+        if [ "$all_submodules_have_branch" = "false" ]; then
+            print_info "  部分子模块不存在分支 $branch_name"
+            return 1
+        fi
+    fi
+    
+    print_success "所有仓库都存在分支 $branch_name"
+    return 0
+}
+
+# 直接打包指定分支
+direct_bundle_branch() {
+    local base_repo="$1"
+    local branch_name="$2"
+    
+    print_info "直接打包分支 $branch_name..."
+    
+    # 切换到指定分支
+    cd "$base_repo"
+    print_info "  切换到分支 $branch_name"
+    git checkout "$branch_name" 2>/dev/null || {
+        print_error "  无法切换到分支 $branch_name"
+        cd - > /dev/null
+        return 1
+    }
+    cd - > /dev/null
+    
+    # 检查分支状态
+    if ! check_repo_clean "$base_repo" "$branch_name"; then
+        print_error "分支 $branch_name 不纯净，无法直接打包"
+        return 1
+    fi
+    
+    # 切换所有子模块到指定分支
+    if [ -f "$base_repo/.gitmodules" ]; then
+        print_info "切换所有子模块到分支 $branch_name..."
+        cd "$base_repo"
+        git submodule foreach "
+            echo \"[INFO] 切换子模块 \$name 到分支 $branch_name\"
+            git checkout \"$branch_name\" 2>/dev/null || {
+                echo \"[ERROR] 子模块 \$name 无法切换到分支 $branch_name\"
+                exit 1
+            }
+        " || {
+            print_error "部分子模块无法切换到分支 $branch_name"
+            cd - > /dev/null
+            return 1
+        }
+        cd - > /dev/null
+    fi
+    
+    # 创建bundles
+    print_info "基于分支 $branch_name 创建bundles"
+    
+    # 创建主仓库的bundle
+    create_bundle "$base_repo" "$MAIN_REPO_NAME"
+    
+    # 处理子模块
+    if [ -f "$base_repo/.gitmodules" ]; then
+        print_info "处理子模块..."
+        
+        # 读取.gitmodules文件并处理每个子模块
+        while IFS= read -r line; do
+            if [[ $line =~ ^\[submodule ]]; then
+                # 提取子模块名称
+                submodule_name=$(echo "$line" | sed 's/\[submodule "\([^"]*\)"\]/\1/')
+                print_info "处理子模块: $submodule_name"
+                
+                # 查找子模块路径
+                submodule_path=""
+                while IFS= read -r subline; do
+                    if [[ $subline =~ ^[[:space:]]*path[[:space:]]*=[[:space:]]*(.+)$ ]]; then
+                        submodule_path="${BASH_REMATCH[1]}"
+                        break
+                    fi
+                done
+                
+                if [ -n "$submodule_path" ] && [ -d "$base_repo/$submodule_path" ]; then
+                    # 将子模块名称中的路径分隔符替换为下划线，避免路径问题
+                    local safe_submodule_name=$(echo "$submodule_name" | sed 's/[\/\-]/_/g')
+                    create_bundle "$base_repo/$submodule_path" "$MAIN_REPO_NAME-$safe_submodule_name"
+                fi
+            fi
+        done < "$base_repo/.gitmodules"
+    fi
+    
+    # 生成bundle信息文件
+    print_info "生成bundle信息文件..."
+    {
+        echo "# Bundle信息文件"
+        echo "# 生成时间: $(date)"
+        echo "# 配置信息:"
+        echo "#   直接打包分支: $branch_name"
+        echo "#   打包完整代码: $FULL_CODE"
+        echo ""
+        echo "# 主仓库信息:"
+        get_repo_info "$base_repo"
+        echo ""
+        echo "# 子模块信息:"
+        
+        if [ -f "$base_repo/.gitmodules" ]; then
+            while IFS= read -r line; do
+                if [[ $line =~ ^\[submodule ]]; then
+                    submodule_name=$(echo "$line" | sed 's/\[submodule "\([^"]*\)"\]/\1/')
+                    submodule_path=""
+                    while IFS= read -r subline; do
+                        if [[ $subline =~ ^[[:space:]]*path[[:space:]]*=[[:space:]]*(.+)$ ]]; then
+                            submodule_path="${BASH_REMATCH[1]}"
+                            break
+                        fi
+                    done
+                    
+                    if [ -n "$submodule_path" ] && [ -d "$base_repo/$submodule_path" ]; then
+                        get_repo_info "$base_repo/$submodule_path"
+                    fi
+                fi
+            done < "$base_repo/.gitmodules"
+        fi
+    } > "$BUNDLES_DIR/bundle-info.txt"
+    
+    print_success "基于分支 $branch_name 的所有bundles创建完成！"
+    return 0
+}
+
 # 切换仓库到指定分支
 switch_repo_to_branch() {
     local repo_path="$1"
@@ -267,6 +440,64 @@ main() {
     print_info "  目标分支: $TARGET_BRANCH"
     print_info "  重命名分支: $RENAME_BRANCH"
     print_info "  打包完整代码: $FULL_CODE"
+    
+    # 检查RENAME_BRANCH是否存在于所有仓库中
+    if check_all_repos_have_branch "$base_repo" "$RENAME_BRANCH"; then
+        print_info "检测到重命名分支 $RENAME_BRANCH 存在于所有仓库中"
+        echo -e "${YELLOW}是否要直接打包重命名分支 $RENAME_BRANCH？输入 yes 直接打包，否则继续正常流程：${NC}"
+        read -r confirm
+        if [ "$confirm" = "yes" ]; then
+            print_info "用户选择直接打包重命名分支 $RENAME_BRANCH"
+            
+            # 记录原始状态
+            cd "$base_repo"
+            local original_branch=$(git branch --show-current 2>/dev/null || echo "detached")
+            print_info "记录原始状态: $original_branch"
+            cd - > /dev/null
+            
+            # 直接打包RENAME_BRANCH
+            if direct_bundle_branch "$base_repo" "$RENAME_BRANCH"; then
+                print_success "直接打包重命名分支 $RENAME_BRANCH 完成！"
+                print_info "Bundles位置: $bundles_dir"
+                print_info "Bundle信息文件: $bundles_dir/bundle-info.txt"
+                
+                # 回到原始状态
+                print_info "回到原始状态: $original_branch"
+                cd "$base_repo"
+                if [ "$original_branch" != "detached" ]; then
+                    # 尝试多种方式切换回原始分支
+                    if git checkout "$original_branch" 2>/dev/null; then
+                        print_success "成功回到原始分支: $original_branch"
+                    elif git switch "$original_branch" 2>/dev/null; then
+                        print_success "成功回到原始分支: $original_branch"
+                    else
+                        print_warning "无法回到原始分支 $original_branch，保持在当前分支"
+                        print_info "当前分支: $(git branch --show-current 2>/dev/null || echo 'unknown')"
+                    fi
+                else
+                    print_info "原始状态为detached HEAD，保持当前状态"
+                fi
+                cd - > /dev/null
+                
+                # 显示当前配置
+                echo ""
+                show_config
+                
+                # 显示创建的bundles
+                echo ""
+                print_info "创建的bundles:"
+                ls -la "$bundles_dir"/*.bundle 2>/dev/null || print_warning "没有找到.bundle文件"
+                
+                return 0
+            else
+                print_error "直接打包重命名分支 $RENAME_BRANCH 失败，继续正常流程"
+            fi
+        else
+            print_info "用户选择继续正常流程"
+        fi
+    else
+        print_info "重命名分支 $RENAME_BRANCH 不存在于所有仓库中，继续正常流程"
+    fi
     
     # 记录原始状态
     cd "$base_repo"
