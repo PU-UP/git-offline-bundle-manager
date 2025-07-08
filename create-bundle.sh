@@ -86,6 +86,40 @@ check_directories() {
     print_success "目录结构检查完成"
 }
 
+# 检查仓库是否有未提交的更改
+check_repo_clean() {
+    local repo_path="$1"
+    local branch_name="$2"
+    
+    print_info "检查仓库 $repo_path 在分支 $branch_name 上的状态..."
+    
+    cd "$repo_path"
+    
+    # 确保在正确的分支上
+    local current_branch=$(git branch --show-current 2>/dev/null || echo "detached")
+    if [ "$current_branch" != "$branch_name" ]; then
+        print_error "  当前不在目标分支 $branch_name 上，当前分支: $current_branch"
+        cd - > /dev/null
+        return 1
+    fi
+    
+    # 检查是否有未提交的更改
+    local status_output=$(git status --porcelain 2>/dev/null)
+    if [ -n "$status_output" ]; then
+        print_error "  目标分支 $branch_name 不纯净，发现未提交的更改："
+        echo ""
+        git status
+        echo ""
+        print_error "请先提交或暂存所有更改，然后重新运行脚本。"
+        cd - > /dev/null
+        return 1
+    fi
+    
+    print_success "  目标分支 $branch_name 状态纯净，无未提交的更改"
+    cd - > /dev/null
+    return 0
+}
+
 # 切换仓库到指定分支
 switch_repo_to_branch() {
     local repo_path="$1"
@@ -114,6 +148,18 @@ switch_repo_to_branch() {
             git checkout -b "$target_branch"
         }
     fi
+    
+    cd - > /dev/null
+}
+
+# 切换到重命名分支
+switch_to_rename_branch() {
+    local repo_path="$1"
+    local rename_branch="$2"
+    
+    print_info "切换到重命名分支 $rename_branch"
+    
+    cd "$repo_path"
     
     # 创建或切换到重命名分支
     print_info "  切换到重命名分支 $rename_branch"
@@ -228,9 +274,19 @@ main() {
     print_info "记录原始状态: $original_branch"
     cd - > /dev/null
     
-    # 第一步：切换主仓库到目标分支
+    # 第一步：切换主仓库到目标分支并检查状态
     print_info "第一步：切换主仓库到目标分支 $TARGET_BRANCH"
     switch_repo_to_branch "$base_repo" "$TARGET_BRANCH" "$RENAME_BRANCH"
+    
+    # 检查目标分支状态（在目标分支上检查）
+    print_info "检查目标分支 $TARGET_BRANCH 的状态..."
+    if ! check_repo_clean "$base_repo" "$TARGET_BRANCH"; then
+        print_error "目标分支 $TARGET_BRANCH 不纯净，终止生成Bundles。"
+        exit 1
+    fi
+    
+    # 切换到重命名分支
+    switch_to_rename_branch "$base_repo" "$RENAME_BRANCH"
     
     # 第二步：让所有子模块基于当前状态创建重命名分支
     print_info "第二步：让所有子模块基于当前状态创建重命名分支 $RENAME_BRANCH"
