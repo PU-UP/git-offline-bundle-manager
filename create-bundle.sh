@@ -184,6 +184,108 @@ check_all_repos_have_branch() {
     return 0
 }
 
+# 删除指定分支
+delete_branch() {
+    local repo_path="$1"
+    local branch_name="$2"
+    
+    print_info "删除仓库 $repo_path 中的分支 $branch_name"
+    
+    cd "$repo_path"
+    
+    # 检查分支是否存在
+    if ! git show-ref --verify --quiet "refs/heads/$branch_name" 2>/dev/null; then
+        print_info "  分支 $branch_name 不存在，跳过删除"
+        cd - > /dev/null
+        return 0
+    fi
+    
+    # 检查当前是否在要删除的分支上
+    local current_branch=$(git branch --show-current 2>/dev/null || echo "detached")
+    if [ "$current_branch" = "$branch_name" ]; then
+        print_warning "  当前在分支 $branch_name 上，需要先切换到其他分支"
+        # 尝试切换到其他分支
+        local other_branch=$(git branch | grep -v "^\*" | grep -v "$branch_name" | head -1 | xargs)
+        if [ -n "$other_branch" ]; then
+            print_info "  切换到分支 $other_branch"
+            git checkout "$other_branch" 2>/dev/null || {
+                print_error "  无法切换到其他分支，跳过删除分支 $branch_name"
+                cd - > /dev/null
+                return 1
+            }
+        else
+            print_error "  没有其他分支可切换，跳过删除分支 $branch_name"
+            cd - > /dev/null
+            return 1
+        fi
+    fi
+    
+    # 删除分支
+    if git branch -D "$branch_name" 2>/dev/null; then
+        print_success "  成功删除分支 $branch_name"
+        cd - > /dev/null
+        return 0
+    else
+        print_error "  删除分支 $branch_name 失败"
+        cd - > /dev/null
+        return 1
+    fi
+}
+
+# 删除所有子模块中的指定分支
+delete_submodule_branches() {
+    local base_repo="$1"
+    local branch_name="$2"
+    
+    if [ ! -f "$base_repo/.gitmodules" ]; then
+        print_info "没有找到.gitmodules文件，跳过子模块分支删除"
+        return
+    fi
+    
+    print_info "删除所有子模块中的分支 $branch_name..."
+    
+    cd "$base_repo"
+    
+    # 使用git submodule foreach删除所有子模块中的指定分支
+    git submodule foreach "
+        echo \"[INFO] 删除子模块 \$name 中的分支 $branch_name\"
+        
+        # 检查分支是否存在
+        if ! git show-ref --verify --quiet \"refs/heads/$branch_name\" 2>/dev/null; then
+            echo \"  分支 $branch_name 不存在，跳过删除\"
+            exit 0
+        fi
+        
+        # 检查当前是否在要删除的分支上
+        current_branch=\$(git branch --show-current 2>/dev/null || echo 'detached')
+        if [ \"\$current_branch\" = \"$branch_name\" ]; then
+            echo \"  当前在分支 $branch_name 上，需要先切换到其他分支\"
+            # 尝试切换到其他分支
+            other_branch=\$(git branch | grep -v '^\*' | grep -v '$branch_name' | head -1 | xargs)
+            if [ -n \"\$other_branch\" ]; then
+                echo \"  切换到分支 \$other_branch\"
+                git checkout \"\$other_branch\" 2>/dev/null || {
+                    echo \"  无法切换到其他分支，跳过删除分支 $branch_name\"
+                    exit 1
+                }
+            else
+                echo \"  没有其他分支可切换，跳过删除分支 $branch_name\"
+                exit 1
+            fi
+        fi
+        
+        # 删除分支
+        if git branch -D \"$branch_name\" 2>/dev/null; then
+            echo \"  成功删除分支 $branch_name\"
+        else
+            echo \"  删除分支 $branch_name 失败\"
+            exit 1
+        fi
+    "
+    
+    cd - > /dev/null
+}
+
 # 直接打包指定分支
 direct_bundle_branch() {
     local base_repo="$1"
@@ -368,6 +470,15 @@ switch_to_rename_branch() {
     
     cd "$repo_path"
     
+    # 检查分支是否已存在
+    local branch_existed=false
+    if git show-ref --verify --quiet "refs/heads/$rename_branch" 2>/dev/null; then
+        branch_existed=true
+        print_info "  重命名分支 $rename_branch 已存在"
+    else
+        print_info "  重命名分支 $rename_branch 不存在"
+    fi
+    
     # 创建或切换到重命名分支
     print_info "  切换到重命名分支 $rename_branch"
     git checkout "$rename_branch" 2>/dev/null || {
@@ -376,12 +487,20 @@ switch_to_rename_branch() {
     }
     
     cd - > /dev/null
+    
+    # 返回分支是否原本存在
+    if [ "$branch_existed" = "true" ]; then
+        return 0  # 分支原本存在
+    else
+        return 1  # 分支是新创建的
+    fi
 }
 
 # 切换所有子模块到重命名分支
 switch_submodules_to_rename_branch() {
     local base_repo="$1"
     local rename_branch="$2"
+    local created_branches_file="$3"  # 用于记录新创建的分支
     
     if [ ! -f "$base_repo/.gitmodules" ]; then
         print_info "没有找到.gitmodules文件，跳过子模块切换"
@@ -392,11 +511,23 @@ switch_submodules_to_rename_branch() {
     
     cd "$base_repo"
     
+    # 清空记录文件
+    > "$created_branches_file"
+    
     # 使用git submodule foreach让所有子模块基于当前状态创建重命名分支
     git submodule foreach "
         echo \"[INFO] 处理子模块: \$name\"
         current_branch=\$(git branch --show-current 2>/dev/null || echo 'detached')
         echo \"  当前分支: \$current_branch\"
+        
+        # 检查分支是否已存在
+        if git show-ref --verify --quiet \"refs/heads/$rename_branch\" 2>/dev/null; then
+            echo \"  重命名分支 $rename_branch 已存在\"
+        else
+            echo \"  重命名分支 $rename_branch 不存在，将创建新分支\"
+            # 记录新创建的分支
+            echo \"\$name\" >> \"$created_branches_file\"
+        fi
         
         # 直接创建或切换到重命名分支（基于当前状态）
         echo \"  切换到重命名分支 $rename_branch\"
@@ -569,6 +700,10 @@ main() {
     print_info "记录原始状态: $original_branch"
     cd - > /dev/null
     
+    # 创建临时文件来记录新创建的分支
+    local created_branches_file="/tmp/created_branches_$$.txt"
+    local main_repo_created_branch=false
+    
     # 第一步：切换主仓库到目标分支并检查状态
     print_info "第一步：切换主仓库到目标分支 $TARGET_BRANCH"
     switch_repo_to_branch "$base_repo" "$TARGET_BRANCH" "$RENAME_BRANCH"
@@ -580,12 +715,17 @@ main() {
         exit 1
     fi
     
-    # 切换到重命名分支
-    switch_to_rename_branch "$base_repo" "$RENAME_BRANCH"
+    # 切换到重命名分支，并检查是否是新创建的
+    if switch_to_rename_branch "$base_repo" "$RENAME_BRANCH"; then
+        print_info "主仓库的重命名分支 $RENAME_BRANCH 原本已存在"
+    else
+        print_info "主仓库的重命名分支 $RENAME_BRANCH 是新创建的"
+        main_repo_created_branch=true
+    fi
     
     # 第二步：让所有子模块基于当前状态创建重命名分支
     print_info "第二步：让所有子模块基于当前状态创建重命名分支 $RENAME_BRANCH"
-    switch_submodules_to_rename_branch "$base_repo" "$RENAME_BRANCH"
+    switch_submodules_to_rename_branch "$base_repo" "$RENAME_BRANCH" "$created_branches_file"
     
     # 第四步：基于重命名分支创建bundle
     print_info "第四步：基于重命名分支创建bundles"
@@ -722,6 +862,52 @@ main() {
         print_info "原始状态为detached HEAD，保持当前状态"
     fi
     cd - > /dev/null
+    
+    # 删除新创建的分支（如果原本不存在的话）
+    print_info "清理新创建的分支..."
+    
+    # 删除主仓库中新创建的分支
+    if [ "$main_repo_created_branch" = "true" ]; then
+        print_info "删除主仓库中新创建的分支 $RENAME_BRANCH"
+        delete_branch "$base_repo" "$RENAME_BRANCH"
+    fi
+    
+    # 删除子模块中新创建的分支
+    if [ -f "$created_branches_file" ] && [ -s "$created_branches_file" ]; then
+        print_info "删除子模块中新创建的分支..."
+        while IFS= read -r submodule_name; do
+            if [ -n "$submodule_name" ]; then
+                # 查找子模块路径
+                local submodule_path=""
+                while IFS= read -r line; do
+                    if [[ $line =~ ^\[submodule ]]; then
+                        local current_submodule_name=$(echo "$line" | sed 's/\[submodule "\([^"]*\)"\]/\1/')
+                        if [ "$current_submodule_name" = "$submodule_name" ]; then
+                            # 读取下一行获取路径
+                            while IFS= read -r subline; do
+                                if [[ $subline =~ ^[[:space:]]*path[[:space:]]*=[[:space:]]*(.+)$ ]]; then
+                                    submodule_path="${BASH_REMATCH[1]}"
+                                    break 2
+                                fi
+                            done
+                        fi
+                    fi
+                done < "$base_repo/.gitmodules"
+                
+                if [ -n "$submodule_path" ] && [ -d "$base_repo/$submodule_path" ]; then
+                    print_info "删除子模块 $submodule_name 中新创建的分支 $RENAME_BRANCH"
+                    delete_branch "$base_repo/$submodule_path" "$RENAME_BRANCH"
+                fi
+            fi
+        done < "$created_branches_file"
+    fi
+    
+    # 清理临时文件
+    if [ -f "$created_branches_file" ]; then
+        rm -f "$created_branches_file"
+    fi
+    
+    print_success "分支清理完成"
     
     # 显示当前配置
     echo ""
