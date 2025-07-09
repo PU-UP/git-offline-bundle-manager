@@ -17,14 +17,9 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-# 静默模式标志
-VERBOSE=false
-
 # 打印带颜色的消息
 print_info() {
-    if [ "$VERBOSE" = true ]; then
-        echo -e "${BLUE}[INFO]${NC} $1"
-    fi
+    echo -e "${BLUE}[INFO]${NC} $1"
 }
 
 print_success() {
@@ -47,7 +42,6 @@ show_usage() {
     echo "  -s, --source-repo PATH     目标导入的代码仓库路径"
     echo "  -b, --bundles-dir PATH     bundles位置"
     echo "  -r, --rename-branch NAME   优先在bundle中寻找的分支名"
-    echo "  -v, --verbose              详细输出模式"
     echo "  -h, --help                 显示此帮助信息"
     echo ""
     echo "环境变量:"
@@ -75,10 +69,6 @@ parse_arguments() {
             -r|--rename-branch)
                 RENAME_BRANCH="$2"
                 shift 2
-                ;;
-            -v|--verbose)
-                VERBOSE=true
-                shift
                 ;;
             -h|--help)
                 show_usage
@@ -200,10 +190,8 @@ import_bundle() {
     # 获取bundle中的所有分支
     local bundle_branches=$(git branch -r 2>/dev/null | sed 's/^[[:space:]]*origin\///' 2>/dev/null || echo "")
     
-    if [ "$VERBOSE" = true ]; then
-        print_info "  Bundle中的分支:"
-        echo "$bundle_branches" | sed 's/^/    /'
-    fi
+    print_info "  Bundle中的分支:"
+    echo "$bundle_branches" | sed 's/^/    /'
     
     # 检查是否包含指定的分支
     local target_branch_found=false
@@ -240,10 +228,8 @@ import_bundle() {
     # 获取bundle中的所有提交（只获取前5个用于检查）
     local bundle_commits=$(git log --oneline --all 2>/dev/null | head -5 2>/dev/null || echo "")
     
-    if [ "$VERBOSE" = true ]; then
-        print_info "  Bundle中的提交 (前5个):"
-        echo "$bundle_commits" | sed 's/^/    /'
-    fi
+    print_info "  Bundle中的提交 (前5个):"
+    echo "$bundle_commits" | sed 's/^/    /'
     
     # 保存当前目录
     local current_bundle_dir=$(pwd)
@@ -382,20 +368,18 @@ read_bundle_info() {
     
     if [ -f "$info_file" ]; then
         print_info "读取bundle信息文件..."
-        if [ "$VERBOSE" = true ]; then
-            echo ""
-            echo "=== Bundle信息 ==="
-            while IFS= read -r line; do
-                if [[ $line =~ ^# ]]; then
-                    # 跳过注释行，但显示配置信息
-                    if [[ $line =~ "目标分支:" ]] || [[ $line =~ "重命名分支:" ]] || [[ $line =~ "打包完整代码:" ]]; then
-                        echo "$line"
-                    fi
+        echo ""
+        echo "=== Bundle信息 ==="
+        while IFS= read -r line; do
+            if [[ $line =~ ^# ]]; then
+                # 跳过注释行，但显示配置信息
+                if [[ $line =~ "目标分支:" ]] || [[ $line =~ "重命名分支:" ]] || [[ $line =~ "打包完整代码:" ]]; then
+                    echo "$line"
                 fi
-            done < "$info_file"
-            echo "=================="
-            echo ""
-        fi
+            fi
+        done < "$info_file"
+        echo "=================="
+        echo ""
     else
         print_warning "没有找到bundle信息文件: $info_file"
     fi
@@ -406,32 +390,29 @@ show_import_result() {
     local target_repo="$1"
     
     print_success "导入完成！"
+    echo ""
+    print_info "目标仓库信息:"
+    cd "$target_repo" 2>/dev/null || return 1
+    echo "  路径: $(pwd)"
+    echo "  当前分支: $(git branch --show-current 2>/dev/null || echo 'detached')"
+    echo "  当前提交: $(git rev-parse HEAD 2>/dev/null || echo 'unknown')"
+    echo "  远程仓库: $(git remote get-url origin 2>/dev/null || echo '无远程仓库')"
+    echo "  可用分支:"
+    git branch -a 2>/dev/null | sed 's/^/    /' || echo "    无分支信息"
     
-    if [ "$VERBOSE" = true ]; then
+    # 显示最近的提交
+    echo ""
+    print_info "最近的提交:"
+    git log --oneline -5 2>/dev/null | sed 's/^/  /' || echo "  无提交信息"
+    
+    # 显示子模块信息
+    if [ -f ".gitmodules" ]; then
         echo ""
-        print_info "目标仓库信息:"
-        cd "$target_repo" 2>/dev/null || return 1
-        echo "  路径: $(pwd)"
-        echo "  当前分支: $(git branch --show-current 2>/dev/null || echo 'detached')"
-        echo "  当前提交: $(git rev-parse HEAD 2>/dev/null || echo 'unknown')"
-        echo "  远程仓库: $(git remote get-url origin 2>/dev/null || echo '无远程仓库')"
-        echo "  可用分支:"
-        git branch -a 2>/dev/null | sed 's/^/    /' || echo "    无分支信息"
-        
-        # 显示最近的提交
-        echo ""
-        print_info "最近的提交:"
-        git log --oneline -5 2>/dev/null | sed 's/^/  /' || echo "  无提交信息"
-        
-        # 显示子模块信息
-        if [ -f ".gitmodules" ]; then
-            echo ""
-            print_info "子模块信息:"
-            git submodule status 2>/dev/null | sed 's/^/  /' || echo "  无子模块信息"
-        fi
-        
-        cd - > /dev/null 2>&1 || true
+        print_info "子模块信息:"
+        git submodule status 2>/dev/null | sed 's/^/  /' || echo "  无子模块信息"
     fi
+    
+    cd - > /dev/null 2>&1 || true
 }
 
 # 主函数
@@ -477,12 +458,10 @@ main() {
     read_bundle_info "$BUNDLES_DIR"
     
     # 显示当前配置
-    if [ "$VERBOSE" = true ]; then
-        print_info "当前配置信息:"
-        print_info "  目标仓库: $SOURCE_REPO"
-        print_info "  Bundles目录: $BUNDLES_DIR"
-        print_info "  优先分支: $RENAME_BRANCH"
-    fi
+    print_info "当前配置信息:"
+    print_info "  目标仓库: $SOURCE_REPO"
+    print_info "  Bundles目录: $BUNDLES_DIR"
+    print_info "  优先分支: $RENAME_BRANCH"
     
     # 导入主仓库bundle
     local main_bundle="$BUNDLES_DIR/$repo_name.bundle"
@@ -498,10 +477,8 @@ main() {
         
     else
         print_error "主仓库bundle文件不存在: $main_bundle"
-        if [ "$VERBOSE" = true ]; then
-            print_info "可用的bundle文件:"
-            find "$BUNDLES_DIR" -name "*.bundle" -exec basename {} \; 2>/dev/null | sed 's/^/  /' || echo "  无bundle文件"
-        fi
+        print_info "可用的bundle文件:"
+        find "$BUNDLES_DIR" -name "*.bundle" -exec basename {} \; 2>/dev/null | sed 's/^/  /' || echo "  无bundle文件"
         exit 1
     fi
 }
