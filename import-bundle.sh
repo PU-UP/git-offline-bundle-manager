@@ -92,6 +92,11 @@ check_requirements() {
         exit 1
     fi
     
+    if ! command -v unzip &> /dev/null; then
+        print_error "unzip 命令未找到，请先安装unzip"
+        exit 1
+    fi
+    
     print_success "所有必要的命令都已找到"
 }
 
@@ -128,11 +133,47 @@ validate_parameters() {
         exit 1
     fi
     
-    # 检查是否有bundle文件
+    # 检查是否有bundle文件或zip文件
     local bundle_count=$(find "$BUNDLES_DIR" -name "*.bundle" 2>/dev/null | wc -l)
-    if [ "$bundle_count" -eq 0 ]; then
-        print_error "$BUNDLES_DIR 目录中没有找到.bundle文件"
+    local zip_count=$(find "$BUNDLES_DIR" -name "*.zip" 2>/dev/null | wc -l)
+    
+    if [ "$bundle_count" -eq 0 ] && [ "$zip_count" -eq 0 ]; then
+        print_error "$BUNDLES_DIR 目录中没有找到.bundle文件或.zip文件"
         exit 1
+    fi
+    
+    # 如果只有zip文件，询问是否解压
+    if [ "$bundle_count" -eq 0 ] && [ "$zip_count" -gt 0 ]; then
+        print_warning "在 $BUNDLES_DIR 目录中只找到 $zip_count 个zip文件，没有找到.bundle文件"
+        echo -e "${YELLOW}是否要解压zip文件到 $BUNDLES_DIR 目录？输入 yes 解压，否则退出：${NC}"
+        read -r confirm
+        if [ "$confirm" = "yes" ]; then
+            print_info "解压zip文件..."
+            cd "$BUNDLES_DIR"
+            for zip_file in *.zip; do
+                if [ -f "$zip_file" ]; then
+                    print_info "解压: $zip_file"
+                    if unzip -o "$zip_file" >/dev/null 2>&1; then
+                        print_success "解压完成: $zip_file"
+                    else
+                        print_error "解压失败: $zip_file"
+                        exit 1
+                    fi
+                fi
+            done
+            cd - > /dev/null
+            
+            # 重新检查bundle文件
+            bundle_count=$(find "$BUNDLES_DIR" -name "*.bundle" 2>/dev/null | wc -l)
+            if [ "$bundle_count" -eq 0 ]; then
+                print_error "解压后仍然没有找到.bundle文件"
+                exit 1
+            fi
+            print_success "找到 $bundle_count 个bundle文件"
+        else
+            print_error "用户取消操作，退出。"
+            exit 1
+        fi
     fi
     
     # 检查RENAME_BRANCH

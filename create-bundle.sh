@@ -46,6 +46,11 @@ check_requirements() {
         exit 1
     fi
     
+    if [ "$COMPRESS_BUNDLES" = "true" ] && ! command -v zip &> /dev/null; then
+        print_error "zip 命令未找到，请先安装zip"
+        exit 1
+    fi
+    
     print_success "所有必要的命令都已找到"
 }
 
@@ -289,6 +294,23 @@ direct_bundle_branch() {
         fi
     } > "$BUNDLES_DIR/bundle-info.txt"
     
+    # 如果启用了压缩，将bundles压缩成zip
+    if [ "$COMPRESS_BUNDLES" = "true" ]; then
+        print_info "压缩bundles为zip文件..."
+        cd "$BUNDLES_DIR"
+        local zip_filename="bundles-$(date +%Y%m%d_%H%M%S).zip"
+        if zip -r "$zip_filename" *.bundle bundle-info.txt >/dev/null 2>&1; then
+            print_success "Bundles压缩完成: $zip_filename"
+            print_info "压缩文件大小: $(du -h "$zip_filename" | cut -f1)"
+            # 删除原始的bundle文件
+            rm -f *.bundle bundle-info.txt
+            print_info "已删除原始bundle文件"
+        else
+            print_error "压缩bundles失败"
+        fi
+        cd - > /dev/null
+    fi
+    
     print_success "基于分支 $branch_name 的所有bundles创建完成！"
     return 0
 }
@@ -440,6 +462,7 @@ main() {
     print_info "  目标分支: $TARGET_BRANCH"
     print_info "  重命名分支: $RENAME_BRANCH"
     print_info "  打包完整代码: $FULL_CODE"
+    print_info "  压缩bundles: $COMPRESS_BUNDLES"
     
     # 检查RENAME_BRANCH是否存在于所有仓库中
     if check_all_repos_have_branch "$base_repo" "$RENAME_BRANCH"; then
@@ -459,7 +482,17 @@ main() {
             if direct_bundle_branch "$base_repo" "$RENAME_BRANCH"; then
                 print_success "直接打包重命名分支 $RENAME_BRANCH 完成！"
                 print_info "Bundles位置: $bundles_dir"
-                print_info "Bundle信息文件: $bundles_dir/bundle-info.txt"
+                if [ "$COMPRESS_BUNDLES" = "true" ]; then
+                    # 查找最新的zip文件
+                    local latest_zip=$(ls -t "$bundles_dir"/*.zip 2>/dev/null | head -1)
+                    if [ -n "$latest_zip" ]; then
+                        print_info "压缩文件: $latest_zip"
+                    else
+                        print_info "压缩文件已创建"
+                    fi
+                else
+                    print_info "Bundle信息文件: $bundles_dir/bundle-info.txt"
+                fi
                 
                 # 回到原始状态
                 print_info "回到原始状态: $original_branch"
@@ -486,7 +519,11 @@ main() {
                 # 显示创建的bundles
                 echo ""
                 print_info "创建的bundles:"
-                ls -la "$bundles_dir"/*.bundle 2>/dev/null || print_warning "没有找到.bundle文件"
+                if [ "$COMPRESS_BUNDLES" = "true" ]; then
+                    ls -la "$bundles_dir"/*.zip 2>/dev/null || print_warning "没有找到.zip文件"
+                else
+                    ls -la "$bundles_dir"/*.bundle 2>/dev/null || print_warning "没有找到.bundle文件"
+                fi
                 
                 return 0
             else
@@ -593,9 +630,30 @@ main() {
         fi
     } > "$bundles_dir/bundle-info.txt"
     
+    # 如果启用了压缩，将bundles压缩成zip
+    if [ "$COMPRESS_BUNDLES" = "true" ]; then
+        print_info "压缩bundles为zip文件..."
+        cd "$bundles_dir"
+        local zip_filename="bundles-$(date +%Y%m%d_%H%M%S).zip"
+        if zip -r "$zip_filename" *.bundle bundle-info.txt >/dev/null 2>&1; then
+            print_success "Bundles压缩完成: $zip_filename"
+            print_info "压缩文件大小: $(du -h "$zip_filename" | cut -f1)"
+            # 删除原始的bundle文件
+            rm -f *.bundle bundle-info.txt
+            print_info "已删除原始bundle文件"
+        else
+            print_error "压缩bundles失败"
+        fi
+        cd - > /dev/null
+    fi
+    
     print_success "所有bundles创建完成！"
     print_info "Bundles位置: $bundles_dir"
-    print_info "Bundle信息文件: $bundles_dir/bundle-info.txt"
+    if [ "$COMPRESS_BUNDLES" = "true" ]; then
+        print_info "压缩文件: $bundles_dir/$zip_filename"
+    else
+        print_info "Bundle信息文件: $bundles_dir/bundle-info.txt"
+    fi
     
     # 回到原始状态
     print_info "回到原始状态: $original_branch"
@@ -622,7 +680,11 @@ main() {
     # 显示创建的bundles
     echo ""
     print_info "创建的bundles:"
-    ls -la "$bundles_dir"/*.bundle 2>/dev/null || print_warning "没有找到.bundle文件"
+    if [ "$COMPRESS_BUNDLES" = "true" ]; then
+        ls -la "$bundles_dir"/*.zip 2>/dev/null || print_warning "没有找到.zip文件"
+    else
+        ls -la "$bundles_dir"/*.bundle 2>/dev/null || print_warning "没有找到.bundle文件"
+    fi
 }
 
 # 运行主函数

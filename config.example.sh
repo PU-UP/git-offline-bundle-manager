@@ -13,6 +13,7 @@ DEFAULT_MAIN_REPO_NAME="slam-core"        # 主仓库名称
 DEFAULT_TARGET_BRANCH="release_2.3.7"              # 目标分支（用于切换）
 DEFAULT_RENAME_BRANCH="your_custom_branch"     # 重命名分支（用于打包）
 DEFAULT_FULL_CODE="false"                 # 是否打包完整代码（true/false）
+DEFAULT_COMPRESS_BUNDLES="true"          # 是否将bundles压缩成zip（true/false）
 
 # 示例：自定义配置
 # DEFAULT_SOURCE_REPO="/path/to/your/repo"     # 自定义源仓库路径
@@ -22,6 +23,7 @@ DEFAULT_FULL_CODE="false"                 # 是否打包完整代码（true/fals
 # DEFAULT_TARGET_BRANCH="develop"              # 自定义目标分支
 # DEFAULT_RENAME_BRANCH="release-v1.0"         # 自定义重命名分支
 # DEFAULT_FULL_CODE="true"                     # 自定义是否打包完整代码
+# DEFAULT_COMPRESS_BUNDLES="true"              # 自定义是否压缩bundles
 
 # 允许通过环境变量覆盖默认配置
 export SOURCE_REPO="${SOURCE_REPO:-$DEFAULT_SOURCE_REPO}"
@@ -31,6 +33,7 @@ export MAIN_REPO_NAME="${MAIN_REPO_NAME:-$DEFAULT_MAIN_REPO_NAME}"
 export TARGET_BRANCH="${TARGET_BRANCH:-$DEFAULT_TARGET_BRANCH}"
 export RENAME_BRANCH="${RENAME_BRANCH:-$DEFAULT_RENAME_BRANCH}"
 export FULL_CODE="${FULL_CODE:-$DEFAULT_FULL_CODE}"
+export COMPRESS_BUNDLES="${COMPRESS_BUNDLES:-$DEFAULT_COMPRESS_BUNDLES}"
 
 # 验证配置
 validate_config() {
@@ -71,6 +74,12 @@ validate_config() {
         errors=$((errors + 1))
     fi
     
+    # 验证COMPRESS_BUNDLES参数
+    if [[ "$COMPRESS_BUNDLES" != "true" && "$COMPRESS_BUNDLES" != "false" ]]; then
+        echo "[ERROR] COMPRESS_BUNDLES参数必须是 'true' 或 'false': $COMPRESS_BUNDLES"
+        errors=$((errors + 1))
+    fi
+    
     if [ $errors -gt 0 ]; then
         echo "[ERROR] 配置验证失败，请检查上述错误"
         return 1
@@ -89,6 +98,7 @@ show_config() {
     echo "目标分支: $TARGET_BRANCH"
     echo "重命名分支: $RENAME_BRANCH"
     echo "打包完整代码: $FULL_CODE"
+    echo "压缩bundles: $COMPRESS_BUNDLES"
     echo "=========================="
 }
 
