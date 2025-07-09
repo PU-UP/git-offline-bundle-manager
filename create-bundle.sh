@@ -298,7 +298,19 @@ direct_bundle_branch() {
     if [ "$COMPRESS_BUNDLES" = "true" ]; then
         print_info "压缩bundles为zip文件..."
         cd "$BUNDLES_DIR"
-        local zip_filename="bundles-$(date +%Y%m%d_%H%M%S).zip"
+        
+        # 确定zip文件名
+        local zip_filename
+        if [ -n "$ZIP_FILENAME" ]; then
+            # 使用自定义文件名
+            zip_filename="$ZIP_FILENAME.zip"
+            print_info "  使用自定义文件名: $zip_filename"
+        else
+            # 使用默认的时间戳命名
+            zip_filename="bundles-$(date +%Y%m%d_%H%M%S).zip"
+            print_info "  使用自动生成文件名: $zip_filename"
+        fi
+        
         if zip -r "$zip_filename" *.bundle bundle-info.txt >/dev/null 2>&1; then
             print_success "Bundles压缩完成: $zip_filename"
             print_info "压缩文件大小: $(du -h "$zip_filename" | cut -f1)"
@@ -463,6 +475,11 @@ main() {
     print_info "  重命名分支: $RENAME_BRANCH"
     print_info "  打包完整代码: $FULL_CODE"
     print_info "  压缩bundles: $COMPRESS_BUNDLES"
+    if [ -n "$ZIP_FILENAME" ]; then
+        print_info "  自定义zip文件名: $ZIP_FILENAME.zip"
+    else
+        print_info "  zip文件名: 自动生成"
+    fi
     
     # 检查RENAME_BRANCH是否存在于所有仓库中
     if check_all_repos_have_branch "$base_repo" "$RENAME_BRANCH"; then
@@ -483,12 +500,22 @@ main() {
                 print_success "直接打包重命名分支 $RENAME_BRANCH 完成！"
                 print_info "Bundles位置: $bundles_dir"
                 if [ "$COMPRESS_BUNDLES" = "true" ]; then
-                    # 查找最新的zip文件
-                    local latest_zip=$(ls -t "$bundles_dir"/*.zip 2>/dev/null | head -1)
-                    if [ -n "$latest_zip" ]; then
-                        print_info "压缩文件: $latest_zip"
+                    if [ -n "$ZIP_FILENAME" ]; then
+                        # 使用自定义文件名
+                        local custom_zip="$bundles_dir/$ZIP_FILENAME.zip"
+                        if [ -f "$custom_zip" ]; then
+                            print_info "压缩文件: $custom_zip"
+                        else
+                            print_info "压缩文件: $ZIP_FILENAME.zip"
+                        fi
                     else
-                        print_info "压缩文件已创建"
+                        # 查找最新的zip文件
+                        local latest_zip=$(ls -t "$bundles_dir"/*.zip 2>/dev/null | head -1)
+                        if [ -n "$latest_zip" ]; then
+                            print_info "压缩文件: $latest_zip"
+                        else
+                            print_info "压缩文件已创建"
+                        fi
                     fi
                 else
                     print_info "Bundle信息文件: $bundles_dir/bundle-info.txt"
@@ -634,7 +661,19 @@ main() {
     if [ "$COMPRESS_BUNDLES" = "true" ]; then
         print_info "压缩bundles为zip文件..."
         cd "$bundles_dir"
-        local zip_filename="bundles-$(date +%Y%m%d_%H%M%S).zip"
+        
+        # 确定zip文件名
+        local zip_filename
+        if [ -n "$ZIP_FILENAME" ]; then
+            # 使用自定义文件名
+            zip_filename="$ZIP_FILENAME.zip"
+            print_info "  使用自定义文件名: $zip_filename"
+        else
+            # 使用默认的时间戳命名
+            zip_filename="bundles-$(date +%Y%m%d_%H%M%S).zip"
+            print_info "  使用自动生成文件名: $zip_filename"
+        fi
+        
         if zip -r "$zip_filename" *.bundle bundle-info.txt >/dev/null 2>&1; then
             print_success "Bundles压缩完成: $zip_filename"
             print_info "压缩文件大小: $(du -h "$zip_filename" | cut -f1)"
@@ -650,7 +689,18 @@ main() {
     print_success "所有bundles创建完成！"
     print_info "Bundles位置: $bundles_dir"
     if [ "$COMPRESS_BUNDLES" = "true" ]; then
-        print_info "压缩文件: $bundles_dir/$zip_filename"
+        if [ -n "$ZIP_FILENAME" ]; then
+            # 使用自定义文件名
+            local custom_zip="$bundles_dir/$ZIP_FILENAME.zip"
+            if [ -f "$custom_zip" ]; then
+                print_info "压缩文件: $custom_zip"
+            else
+                print_info "压缩文件: $ZIP_FILENAME.zip"
+            fi
+        else
+            # 使用生成的zip文件名
+            print_info "压缩文件: $bundles_dir/$zip_filename"
+        fi
     else
         print_info "Bundle信息文件: $bundles_dir/bundle-info.txt"
     fi

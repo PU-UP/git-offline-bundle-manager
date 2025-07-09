@@ -14,6 +14,7 @@ DEFAULT_TARGET_BRANCH="release_2.3.7"              # 目标分支（用于切换
 DEFAULT_RENAME_BRANCH="your_custom_branch"     # 重命名分支（用于打包）
 DEFAULT_FULL_CODE="false"                 # 是否打包完整代码（true/false）
 DEFAULT_COMPRESS_BUNDLES="true"          # 是否将bundles压缩成zip（true/false）
+DEFAULT_ZIP_FILENAME=""                  # 自定义zip文件名（为空时使用默认命名：bundles-YYYYMMDD_HHMMSS.zip）
 
 # 示例：自定义配置
 # DEFAULT_SOURCE_REPO="/path/to/your/repo"     # 自定义源仓库路径
@@ -24,6 +25,7 @@ DEFAULT_COMPRESS_BUNDLES="true"          # 是否将bundles压缩成zip（true/f
 # DEFAULT_RENAME_BRANCH="release-v1.0"         # 自定义重命名分支
 # DEFAULT_FULL_CODE="true"                     # 自定义是否打包完整代码
 # DEFAULT_COMPRESS_BUNDLES="true"              # 自定义是否压缩bundles
+# DEFAULT_ZIP_FILENAME="my-custom-bundle"      # 自定义zip文件名（不包含.zip扩展名）
 
 # 允许通过环境变量覆盖默认配置
 export SOURCE_REPO="${SOURCE_REPO:-$DEFAULT_SOURCE_REPO}"
@@ -34,6 +36,7 @@ export TARGET_BRANCH="${TARGET_BRANCH:-$DEFAULT_TARGET_BRANCH}"
 export RENAME_BRANCH="${RENAME_BRANCH:-$DEFAULT_RENAME_BRANCH}"
 export FULL_CODE="${FULL_CODE:-$DEFAULT_FULL_CODE}"
 export COMPRESS_BUNDLES="${COMPRESS_BUNDLES:-$DEFAULT_COMPRESS_BUNDLES}"
+export ZIP_FILENAME="${ZIP_FILENAME:-$DEFAULT_ZIP_FILENAME}"
 
 # 验证配置
 validate_config() {
@@ -80,6 +83,21 @@ validate_config() {
         errors=$((errors + 1))
     fi
     
+    # 验证ZIP_FILENAME参数（如果提供了自定义文件名）
+    if [ -n "$ZIP_FILENAME" ]; then
+        # 检查文件名是否包含非法字符
+        if [[ "$ZIP_FILENAME" =~ [\/\\:*?"<>|] ]]; then
+            echo "[ERROR] ZIP_FILENAME包含非法字符: $ZIP_FILENAME"
+            errors=$((errors + 1))
+        fi
+        
+        # 检查文件名长度
+        if [ ${#ZIP_FILENAME} -gt 100 ]; then
+            echo "[ERROR] ZIP_FILENAME过长（超过100字符）: $ZIP_FILENAME"
+            errors=$((errors + 1))
+        fi
+    fi
+    
     if [ $errors -gt 0 ]; then
         echo "[ERROR] 配置验证失败，请检查上述错误"
         return 1
@@ -99,6 +117,11 @@ show_config() {
     echo "重命名分支: $RENAME_BRANCH"
     echo "打包完整代码: $FULL_CODE"
     echo "压缩bundles: $COMPRESS_BUNDLES"
+    if [ -n "$ZIP_FILENAME" ]; then
+        echo "自定义zip文件名: $ZIP_FILENAME.zip"
+    else
+        echo "zip文件名: 自动生成（bundles-YYYYMMDD_HHMMSS.zip）"
+    fi
     echo "=========================="
 }
 
