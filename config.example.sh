@@ -4,9 +4,9 @@
 # 复制此文件为 config.sh 并根据需要修改配置
 
 # 默认配置
-DEFAULT_SOURCE_REPO="test/slam-core"      # 源仓库路径
-DEFAULT_BUNDLES_DIR="test/bundles"        # bundles输出目录
-DEFAULT_RESTORE_DIR="test/restored_repo"  # 恢复目录
+DEFAULT_SOURCE_REPO="tmp/slam-core"      # 源仓库路径
+DEFAULT_BUNDLES_DIR="tmp/bundles"        # bundles输出目录
+DEFAULT_RESTORE_DIR="tmp/restored_repo"  # 恢复目录
 DEFAULT_MAIN_REPO_NAME="slam-core"        # 主仓库名称
 
 # 新增配置参数
@@ -86,7 +86,7 @@ validate_config() {
     # 验证ZIP_FILENAME参数（如果提供了自定义文件名）
     if [ -n "$ZIP_FILENAME" ]; then
         # 检查文件名是否包含非法字符
-        if [[ "$ZIP_FILENAME" =~ [\/\\:*?"<>|] ]]; then
+        if [[ "$ZIP_FILENAME" =~ [/\\\\:*?\"\<\>\|] ]]; then
             echo "[ERROR] ZIP_FILENAME包含非法字符: $ZIP_FILENAME"
             errors=$((errors + 1))
         fi
