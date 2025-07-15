@@ -577,7 +577,18 @@ create_bundle() {
         # 根据FULL_CODE参数决定打包内容
         if [ "$FULL_CODE" = "true" ]; then
             print_info "  打包完整代码（所有分支）"
+            # 检查可用的分支引用数量
+            local all_refs_count=$(git for-each-ref refs/ 2>/dev/null | wc -l)
+            local remote_refs_count=$(git for-each-ref refs/remotes/ 2>/dev/null | wc -l)
+            
+            print_info "    本地引用: $all_refs_count 个，远程引用: $remote_refs_count 个"
+            
+            # 直接使用--all，git bundle会包含所有可见的引用
             git bundle create "$abs_bundle_path" --all
+            
+            # 验证bundle内容
+            local bundle_refs_count=$(git bundle verify "$abs_bundle_path" 2>/dev/null | grep -c "refs/" || echo "0")
+            print_info "    Bundle包含: $bundle_refs_count 个引用"
         else
             print_info "  仅打包当前分支 $RENAME_BRANCH"
             git bundle create "$abs_bundle_path" "$RENAME_BRANCH"

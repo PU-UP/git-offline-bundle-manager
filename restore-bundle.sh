@@ -206,11 +206,30 @@ restore_submodules() {
             if [ -f "$bundle_file" ]; then
                 print_info "恢复子模块: $submodule_path"
                 restore_bundle "$bundle_file" "$submodule_dir"
+                
+                # 将子模块注册到主仓库中
+                print_info "  注册子模块到主仓库..."
+                cd "$base_repo"
+                git add "$submodule_path" 2>/dev/null || {
+                    print_warning "  无法将子模块 $submodule_path 添加到Git索引"
+                }
+                cd - > /dev/null
             else
                 print_warning "子模块bundle文件不存在: $bundle_file"
             fi
         fi
     done < "$base_repo/.gitmodules"
+    
+    # 最后初始化并更新所有子模块
+    print_info "初始化和更新子模块..."
+    cd "$base_repo"
+    git submodule init 2>/dev/null || {
+        print_warning "git submodule init 执行失败"
+    }
+    git submodule update 2>/dev/null || {
+        print_warning "git submodule update 执行失败"
+    }
+    cd - > /dev/null
 }
 
 # 读取bundle信息文件
