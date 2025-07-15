@@ -207,6 +207,34 @@ import_bundle() {
         return 1
     fi
     
+    # 进入目标仓库目录
+    cd "$target_repo" 2>/dev/null || {
+        print_error "无法进入目标仓库: $target_repo"
+        return 1
+    }
+    
+    # 首先验证bundle是否可以直接导入（尝试在空目录中克隆）
+    local temp_test_dir="$tmp_base/test_clone_$$"
+    mkdir -p "$temp_test_dir" 2>/dev/null || true
+    
+    if git clone "$bundle_file" "$temp_test_dir" >/dev/null 2>&1; then
+        print_info "  Bundle可以直接克隆，使用直接导入模式"
+        rm -rf "$temp_test_dir" 2>/dev/null || true
+        import_bundle_direct "$bundle_file" "$target_repo" "$tmp_base"
+    else
+        print_info "  Bundle需要前置提交，使用增量导入模式"
+        rm -rf "$temp_test_dir" 2>/dev/null || true
+        import_bundle_incremental "$bundle_file" "$target_repo" "$tmp_base"
+    fi
+}
+
+# 直接导入bundle（用于可以直接克隆的bundle）
+import_bundle_direct() {
+    local bundle_file="$1"
+    local target_repo="$2"
+    local tmp_base="$3"
+    local bundle_name=$(basename "$bundle_file" .bundle)
+    
     # 创建临时目录来克隆bundle
     local temp_dir="$tmp_base/bundle_$bundle_name"
     mkdir -p "$temp_dir" 2>/dev/null || {
@@ -355,6 +383,114 @@ import_bundle() {
     rm -rf "$temp_dir" 2>/dev/null || true
     
     print_success "Bundle导入完成: $bundle_name"
+}
+
+# 增量导入bundle（用于需要前置提交的bundle）
+import_bundle_incremental() {
+    local bundle_file="$1"
+    local target_repo="$2"
+    local tmp_base="$3"
+    local bundle_name=$(basename "$bundle_file" .bundle)
+    
+    print_info "  使用增量导入模式"
+    
+    # 进入目标仓库
+    cd "$target_repo" 2>/dev/null || {
+        print_error "无法进入目标仓库: $target_repo"
+        return 1
+    }
+    
+    # 保存当前分支
+    local current_branch=$(git branch --show-current 2>/dev/null || echo "master")
+    local remote_name="bundle_$(date +%s)_$$"
+    
+    # 添加bundle作为远程仓库
+    print_info "  添加bundle作为远程仓库: $remote_name"
+    if ! git remote add "$remote_name" "$bundle_file" >/dev/null 2>&1; then
+        print_error "  无法添加bundle作为远程仓库"
+        return 1
+    fi
+    
+    # 获取bundle中的引用
+    print_info "  获取bundle中的引用..."
+    if ! git fetch "$remote_name" >/dev/null 2>&1; then
+        print_warning "  获取bundle引用失败，尝试列出bundle内容"
+        git bundle list-heads "$bundle_file" 2>/dev/null || {
+            print_error "  无法读取bundle内容"
+            git remote remove "$remote_name" >/dev/null 2>&1 || true
+            return 1
+        }
+    fi
+    
+    # 获取bundle中的分支
+    local bundle_branches=$(git branch -r 2>/dev/null | grep "$remote_name/" | sed "s|^[[:space:]]*$remote_name/||" 2>/dev/null || echo "")
+    
+    if [ -n "$bundle_branches" ]; then
+        print_info "  Bundle中的分支:"
+        echo "$bundle_branches" | sed 's/^/    /'
+        
+        # 寻找目标分支
+        local target_branch_found=false
+        local import_branch=""
+        
+        if [ -n "$RENAME_BRANCH" ]; then
+            if echo "$bundle_branches" | grep -q "^$RENAME_BRANCH$" 2>/dev/null; then
+                print_info "  找到指定分支: $RENAME_BRANCH"
+                target_branch_found=true
+                import_branch="$RENAME_BRANCH"
+            fi
+        fi
+        
+        if [ "$target_branch_found" = false ]; then
+            # 使用第一个可用分支
+            import_branch=$(echo "$bundle_branches" | head -1)
+            if [ -n "$import_branch" ]; then
+                print_info "  使用第一个可用分支: $import_branch"
+                target_branch_found=true
+            fi
+        fi
+        
+        if [ "$target_branch_found" = true ] && [ -n "$import_branch" ]; then
+            # 检查本地是否已有该分支
+            if git show-ref --verify --quiet "refs/heads/$import_branch" 2>/dev/null; then
+                print_info "  本地已有分支 $import_branch，切换并合并"
+                git checkout "$import_branch" >/dev/null 2>&1 || {
+                    print_warning "  无法切换到分支 $import_branch"
+                }
+                
+                # 合并远程分支的内容
+                print_info "  合并bundle中的更改..."
+                if git merge "$remote_name/$import_branch" --no-edit >/dev/null 2>&1; then
+                    print_success "  成功合并bundle内容到分支 $import_branch"
+                else
+                    print_warning "  合并过程中可能存在冲突，请手动解决"
+                fi
+            else
+                print_info "  创建新分支 $import_branch 并导入内容"
+                if git checkout -b "$import_branch" "$remote_name/$import_branch" >/dev/null 2>&1; then
+                    print_success "  成功创建并切换到分支 $import_branch"
+                else
+                    print_warning "  无法创建分支 $import_branch"
+                fi
+            fi
+            
+            # 返回到原始分支
+            if [ "$current_branch" != "$import_branch" ]; then
+                git checkout "$current_branch" >/dev/null 2>&1 || {
+                    print_warning "  无法返回到原分支: $current_branch"
+                }
+            fi
+        else
+            print_warning "  未找到可导入的分支"
+        fi
+    else
+        print_warning "  Bundle中没有找到分支信息"
+    fi
+    
+    # 清理远程仓库
+    git remote remove "$remote_name" >/dev/null 2>&1 || true
+    
+    print_success "增量Bundle导入完成: $bundle_name"
 }
 
 # 导入子模块bundle
@@ -506,6 +642,32 @@ main() {
     
     # 导入主仓库bundle
     local main_bundle="$BUNDLES_DIR/$repo_name.bundle"
+    
+    # 如果直接的bundle文件不存在，尝试推断主仓库名称
+    if [ ! -f "$main_bundle" ]; then
+        print_info "尝试推断主仓库bundle文件名..."
+        # 查找所有bundle文件，获取可能的主仓库名
+        local possible_main_bundles=$(find "$BUNDLES_DIR" -name "*.bundle" -not -name "*-*" 2>/dev/null)
+        
+        if [ -n "$possible_main_bundles" ]; then
+            main_bundle=$(echo "$possible_main_bundles" | head -1)
+            local inferred_repo_name=$(basename "$main_bundle" .bundle)
+            print_info "推断主仓库名称: $inferred_repo_name"
+            print_info "使用bundle文件: $main_bundle"
+            repo_name="$inferred_repo_name"
+        else
+            # 如果没有找到，尝试找最短的bundle文件名（可能是主仓库）
+            local shortest_bundle=$(find "$BUNDLES_DIR" -name "*.bundle" -exec basename {} \; 2>/dev/null | awk '{print length, $0}' | sort -n | head -1 | cut -d' ' -f2-)
+            if [ -n "$shortest_bundle" ]; then
+                main_bundle="$BUNDLES_DIR/$shortest_bundle"
+                local inferred_repo_name=$(basename "$main_bundle" .bundle)
+                print_info "推断主仓库名称: $inferred_repo_name (来自: $shortest_bundle)"
+                print_info "使用bundle文件: $main_bundle"
+                repo_name="$inferred_repo_name"
+            fi
+        fi
+    fi
+    
     if [ -f "$main_bundle" ]; then
         print_info "导入主仓库bundle..."
         import_bundle "$main_bundle" "$SOURCE_REPO" "$TMP_DIR"

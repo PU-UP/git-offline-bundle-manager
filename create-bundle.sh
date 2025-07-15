@@ -574,24 +574,96 @@ create_bundle() {
         print_info "  检测到Git仓库，创建Git bundle..."
         cd "$repo_path"
         
-        # 根据FULL_CODE参数决定打包内容
-        if [ "$FULL_CODE" = "true" ]; then
-            print_info "  打包完整代码（所有分支）"
-            # 检查可用的分支引用数量
-            local all_refs_count=$(git for-each-ref refs/ 2>/dev/null | wc -l)
-            local remote_refs_count=$(git for-each-ref refs/remotes/ 2>/dev/null | wc -l)
+        # 根据FULL_CODE参数和LIMIT_COMMITS参数决定打包内容
+        if [ -n "$LIMIT_COMMITS" ]; then
+            print_info "  限制提交数量模式：保留最近 $LIMIT_COMMITS 个提交"
             
-            print_info "    本地引用: $all_refs_count 个，远程引用: $remote_refs_count 个"
-            
-            # 直接使用--all，git bundle会包含所有可见的引用
-            git bundle create "$abs_bundle_path" --all
-            
-            # 验证bundle内容
-            local bundle_refs_count=$(git bundle verify "$abs_bundle_path" 2>/dev/null | grep -c "refs/" || echo "0")
-            print_info "    Bundle包含: $bundle_refs_count 个引用"
+            if [ "$FULL_CODE" = "true" ]; then
+                print_info "  打包所有分支的最近 $LIMIT_COMMITS 个提交"
+                
+                # 获取所有本地分支
+                local branches=$(git branch --format='%(refname:short)' | grep -v '^HEAD$' | head -20)
+                local bundle_refs=""
+                
+                for branch in $branches; do
+                    # 检查分支是否存在提交
+                    if git rev-parse --verify "$branch" >/dev/null 2>&1; then
+                        # 获取该分支最近n个提交的范围
+                        local commit_count=$(git rev-list --count "$branch" 2>/dev/null || echo "0")
+                        if [ "$commit_count" -gt 0 ]; then
+                            if [ "$commit_count" -le "$LIMIT_COMMITS" ]; then
+                                # 如果提交数量少于限制，包含整个分支
+                                bundle_refs="$bundle_refs $branch"
+                                print_info "    分支 $branch: 包含全部 $commit_count 个提交"
+                            else
+                                # 获取最近n个提交的起始commit
+                                local start_commit=$(git rev-list "$branch" --skip="$LIMIT_COMMITS" -n 1 2>/dev/null)
+                                if [ -n "$start_commit" ]; then
+                                    bundle_refs="$bundle_refs $start_commit..$branch"
+                                    print_info "    分支 $branch: 包含最近 $LIMIT_COMMITS 个提交 ($start_commit..$branch)"
+                                else
+                                    bundle_refs="$bundle_refs $branch"
+                                    print_info "    分支 $branch: 包含全部 $commit_count 个提交"
+                                fi
+                            fi
+                        fi
+                    fi
+                done
+                
+                if [ -n "$bundle_refs" ]; then
+                    git bundle create "$abs_bundle_path" $bundle_refs
+                else
+                    print_error "    没有找到有效的分支进行打包"
+                    return 1
+                fi
+            else
+                print_info "  仅打包分支 $RENAME_BRANCH 的最近 $LIMIT_COMMITS 个提交"
+                
+                # 检查分支是否存在
+                if ! git rev-parse --verify "$RENAME_BRANCH" >/dev/null 2>&1; then
+                    print_error "    分支 $RENAME_BRANCH 不存在"
+                    return 1
+                fi
+                
+                # 获取该分支的提交数量
+                local commit_count=$(git rev-list --count "$RENAME_BRANCH" 2>/dev/null || echo "0")
+                
+                if [ "$commit_count" -le "$LIMIT_COMMITS" ]; then
+                    # 如果提交数量少于限制，包含整个分支
+                    git bundle create "$abs_bundle_path" "$RENAME_BRANCH"
+                    print_info "    包含分支 $RENAME_BRANCH 的全部 $commit_count 个提交"
+                else
+                    # 获取最近n个提交的起始commit
+                    local start_commit=$(git rev-list "$RENAME_BRANCH" --skip="$LIMIT_COMMITS" -n 1 2>/dev/null)
+                    if [ -n "$start_commit" ]; then
+                        git bundle create "$abs_bundle_path" "$start_commit..$RENAME_BRANCH"
+                        print_info "    包含分支 $RENAME_BRANCH 的最近 $LIMIT_COMMITS 个提交 ($start_commit..$RENAME_BRANCH)"
+                    else
+                        git bundle create "$abs_bundle_path" "$RENAME_BRANCH"
+                        print_info "    包含分支 $RENAME_BRANCH 的全部 $commit_count 个提交"
+                    fi
+                fi
+            fi
         else
-            print_info "  仅打包当前分支 $RENAME_BRANCH"
-            git bundle create "$abs_bundle_path" "$RENAME_BRANCH"
+            # 原有逻辑：不限制提交数量
+            if [ "$FULL_CODE" = "true" ]; then
+                print_info "  打包完整代码（所有分支）"
+                # 检查可用的分支引用数量
+                local all_refs_count=$(git for-each-ref refs/ 2>/dev/null | wc -l)
+                local remote_refs_count=$(git for-each-ref refs/remotes/ 2>/dev/null | wc -l)
+                
+                print_info "    本地引用: $all_refs_count 个，远程引用: $remote_refs_count 个"
+                
+                # 直接使用--all，git bundle会包含所有可见的引用
+                git bundle create "$abs_bundle_path" --all
+                
+                # 验证bundle内容
+                local bundle_refs_count=$(git bundle verify "$abs_bundle_path" 2>/dev/null | grep -c "refs/" || echo "0")
+                print_info "    Bundle包含: $bundle_refs_count 个引用"
+            else
+                print_info "  仅打包当前分支 $RENAME_BRANCH"
+                git bundle create "$abs_bundle_path" "$RENAME_BRANCH"
+            fi
         fi
         
         cd - > /dev/null

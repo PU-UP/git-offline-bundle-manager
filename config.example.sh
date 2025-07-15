@@ -15,6 +15,7 @@ DEFAULT_RENAME_BRANCH="your_custom_branch"     # 重命名分支（用于打包�
 DEFAULT_FULL_CODE="false"                 # 是否打包完整代码（true/false）
 DEFAULT_COMPRESS_BUNDLES="true"          # 是否将bundles压缩成zip（true/false）
 DEFAULT_ZIP_FILENAME=""                  # 自定义zip文件名（为空时使用默认命名：bundles-YYYYMMDD_HHMMSS.zip）
+DEFAULT_LIMIT_COMMITS=""                 # 限制每个仓库的提交数量（空表示不限制，数字表示保留最近n个提交）
 
 # 示例：自定义配置
 # DEFAULT_SOURCE_REPO="/path/to/your/repo"     # 自定义源仓库路径
@@ -26,6 +27,7 @@ DEFAULT_ZIP_FILENAME=""                  # 自定义zip文件名（为空时使�
 # DEFAULT_FULL_CODE="true"                     # 自定义是否打包完整代码
 # DEFAULT_COMPRESS_BUNDLES="true"              # 自定义是否压缩bundles
 # DEFAULT_ZIP_FILENAME="my-custom-bundle"      # 自定义zip文件名（不包含.zip扩展名）
+# DEFAULT_LIMIT_COMMITS="50"                   # 自定义限制提交数量（每个仓库保留最近50个提交）
 
 # 允许通过环境变量覆盖默认配置
 export SOURCE_REPO="${SOURCE_REPO:-$DEFAULT_SOURCE_REPO}"
@@ -37,6 +39,7 @@ export RENAME_BRANCH="${RENAME_BRANCH:-$DEFAULT_RENAME_BRANCH}"
 export FULL_CODE="${FULL_CODE:-$DEFAULT_FULL_CODE}"
 export COMPRESS_BUNDLES="${COMPRESS_BUNDLES:-$DEFAULT_COMPRESS_BUNDLES}"
 export ZIP_FILENAME="${ZIP_FILENAME:-$DEFAULT_ZIP_FILENAME}"
+export LIMIT_COMMITS="${LIMIT_COMMITS:-$DEFAULT_LIMIT_COMMITS}"
 
 # 验证配置
 validate_config() {
@@ -98,6 +101,21 @@ validate_config() {
         fi
     fi
     
+    # 验证LIMIT_COMMITS参数（如果提供了限制数量）
+    if [ -n "$LIMIT_COMMITS" ]; then
+        # 检查是否为正整数
+        if ! [[ "$LIMIT_COMMITS" =~ ^[1-9][0-9]*$ ]]; then
+            echo "[ERROR] LIMIT_COMMITS必须是正整数: $LIMIT_COMMITS"
+            errors=$((errors + 1))
+        fi
+        
+        # 检查范围合理性
+        if [ "$LIMIT_COMMITS" -lt 1 ] || [ "$LIMIT_COMMITS" -gt 10000 ]; then
+            echo "[ERROR] LIMIT_COMMITS范围应在1-10000之间: $LIMIT_COMMITS"
+            errors=$((errors + 1))
+        fi
+    fi
+    
     if [ $errors -gt 0 ]; then
         echo "[ERROR] 配置验证失败，请检查上述错误"
         return 1
@@ -121,6 +139,11 @@ show_config() {
         echo "自定义zip文件名: $ZIP_FILENAME.zip"
     else
         echo "zip文件名: 自动生成（bundles-YYYYMMDD_HHMMSS.zip）"
+    fi
+    if [ -n "$LIMIT_COMMITS" ]; then
+        echo "限制提交数量: $LIMIT_COMMITS 个（每个仓库保留最近提交）"
+    else
+        echo "限制提交数量: 不限制（包含完整历史）"
     fi
     echo "=========================="
 }
